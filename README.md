@@ -1,22 +1,34 @@
 # uwstest
-Small CMake based project for experimenting with embedding [µWebSockets](https://github.com/uNetworking/uWebSockets)
-in a C++ application with external libuv event loop.
+Small webserver for experimenting with [µWebSockets](https://github.com/uNetworking/uWebSockets)
+together with external libuv event loop.
 
-## Build
-Clone `uwstest` with submodules to get µWebSockets:
+## Download
+Clone the `uwstest` repository with submodules:
 
 ```console
 git clone --recurse-submodules https://github.com/johanhedin/uwstest.git
 ```
 
-and then build with:
+## Build
+Build everything (including the bundled uSockets) with:
 
 ```console
 cd uwstest
 mkdir build
 cd build
-cmake ..
+cmake -DCMAKE_BUILD_TYPE=Debug ..
 make
 ```
 
-Make sure that development packages for `zlib`, `libuv` and `openssl` are installed.
+`uwstest` requires `zlib`, `libuv` and `openssl` so make sure they are installed
+togehter with their respective development packages.
+
+
+## Run
+Run `uwstest` from the build directory with:
+
+```console
+./uwstest
+```
+
+Stop with `Ctrl-C`.
