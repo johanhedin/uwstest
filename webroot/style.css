@@ -1,0 +1,38 @@
+/* element */
+body {
+    background-color: #49578a;
+}
+
+/* class */
+.center {
+    text-align: center;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.message {
+    text-align: center;
+    font-family: Noto Sans Mono;
+}
+
+.button {
+    text-align: center;
+    font-family: Noto Sans Mono;
+    cursor: pointer;
+}
+
+/* id */
+#send {
+    font-family: Noto Sans Mono;
+}
+
+.button_container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+
+    display: inline-grid; /* grid OR inline-grid*/
+    grid-auto-flow: row; /* column OR row */
+    grid-auto-columns: 1fr;
+    width: max-content; /* not needed with inline-grid */
+}
