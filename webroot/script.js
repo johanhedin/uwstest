@@ -1,8 +1,8 @@
 // This is a small websockets test
 
 const send_button = document.getElementById('send');
-const login_button = document.getElementById('login');
-const logout_button = document.getElementById('logout');
+//const login_button = document.getElementById('login');
+//const logout_button = document.getElementById('logout');
 const start_button = document.getElementById('start');
 const stop_button = document.getElementById('stop');
 const content_div = document.getElementById('content');
@@ -75,6 +75,7 @@ async function startStreaming() {
 
     ws.onopen = (event) => {
         console.log('WebSocket connection opened.');
+        send_button.disabled = false;
     };
 
     // Process incoming messages
@@ -101,6 +102,7 @@ async function startStreaming() {
         //start_button.disabled = false;
         //stop_button.disabled = true;
         //ws = null;
+        send_button.disabled = true;
     };
 
     ws.onerror = (event) => {
@@ -136,13 +138,13 @@ send_button.addEventListener('click', function() {
     }
 });
 
-login_button.addEventListener('click', function() {
-    console.log('Login button pressed');
-});
+//login_button.addEventListener('click', function() {
+//    console.log('Login button pressed');
+//});
 
-logout_button.addEventListener('click', function() {
-    console.log('Logout button pressed');
-});
+//logout_button.addEventListener('click', function() {
+//    console.log('Logout button pressed');
+//});
 
 start_button.addEventListener('click', function() {
     console.log('Start button pressed');
@@ -159,3 +161,4 @@ stop_button.addEventListener('click', function() {
     content_div.innerText = '0ms';
 });
 stop_button.disabled = true;
+send_button.disabled = true;
