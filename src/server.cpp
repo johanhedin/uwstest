@@ -37,6 +37,10 @@
 #include "App.h"
 
 
+// Sleeping:
+// - https://blat-blatnik.github.io/computerBear/making-accurate-sleep-function
+// - https://bulldozer00.blog/2013/12/27/periodic-processing-with-standard-c11-facilities
+
 class Server::Internal {
 public:
     Internal(const Server::Settings& settings);
@@ -102,6 +106,7 @@ private:
     };
 
     void worker_(void);
+    void send_audio_(void);
 };
 
 
@@ -150,7 +155,6 @@ void Server::Internal::worker_() {
     int        ret;
     uv_loop_t  loop;
     uv_timer_t timer;
-    uv_timer_t worker_timer;
     uv_poll_t  ctrl_poll;
 
     std::cout << "Worker started for server " << this << std::endl;
@@ -238,51 +242,57 @@ void Server::Internal::worker_() {
     }, 0, 5000);
     if (ret < 0) std::cerr << "Error: Unable to start idle timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
-    ret = uv_timer_init(&loop, &worker_timer);
-    if (ret < 0) std::cerr << "Error: Unable to initialize worker timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
-
     // Init our frame counter
     sample_buffer_[512] = 0;
+
+    /*
+    uv_timer_t worker_timer;
+    ret = uv_timer_init(&loop, &worker_timer);
+    if (ret < 0) std::cerr << "Error: Unable to initialize worker timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
     // This is the worker timer for the server. Runs the function below every 32ms
     ret = uv_timer_start(&worker_timer, [](uv_timer_t* t) {
         auto  loop{uv_handle_get_loop(reinterpret_cast<uv_handle_t*>(t))};
-        auto& self{*reinterpret_cast<Internal*>(uv_loop_get_data(loop))};
+        //auto& self{*reinterpret_cast<Internal*>(uv_loop_get_data(loop))};
 
-        int fs = 16000; // Hz
-        float tone_fq = 800.0; // Hz
-
-        // Fill buffer from sine wave generated with sin(2 * PI * f) @ 16kHz
-        for (int i = 0; i < 512; i++) {
-            self.sample_buffer_[i] = (short)(std::sin(2.0 * std::numbers::pi * tone_fq * (float)self.sample_idx_ / (float)fs) * (float)SHRT_MAX / 10.0);
-            self.sample_idx_++;
-            if (self.sample_idx_ == fs) self.sample_idx_ = 0;
-        }
-
-        // Update frame counter
-        self.sample_buffer_[512]++;
-
-        // Loop over active sessions and send data if active websockets connection exist
-        for (auto& [id, session] : self.sessions) {
-            std::string_view data{(char*)self.sample_buffer_, 1026};
-            if (session.std_ws) {
-                auto status = session.std_ws->send(data, uWS::OpCode::BINARY);
-                if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
-                    std::cerr << "Error: Unable to send ws message\n";
-                }
-            }
-            if (session.tls_ws) {
-                auto status = session.tls_ws->send(data, uWS::OpCode::BINARY);
-                if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
-                    std::cerr << "Error: Unable to send ws message\n";
-                }
-            }
-        }
+        //self.send_audio_();
 
         uv_update_time(loop);
     }, 0, 32);
     if (ret < 0) std::cerr << "Error: Unable to start worker timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
     uv_timer_set_repeat(&worker_timer, 32);
+    */
+
+    int        audio_pipe[2];
+    uv_poll_t  audio_poll;
+
+    pipe(audio_pipe);
+
+    uv_poll_init(&loop, &audio_poll, audio_pipe[0]);
+    uv_poll_start(&audio_poll, UV_READABLE, [](uv_poll_t* p, int, int) {
+        auto  loop{uv_handle_get_loop(reinterpret_cast<uv_handle_t*>(p))};
+        auto& self{*reinterpret_cast<Internal*>(uv_loop_get_data(loop))};
+        auto  handle{reinterpret_cast<uv_handle_t*>(p)};
+        char  cmd{'X'};
+        int   fd;
+
+        uv_fileno(handle, &fd);
+        read(fd, &cmd, 1);
+
+        self.send_audio_();
+    });
+
+    // Pacer in it's own thread
+    auto t = std::thread([&]() {
+        const auto interval = std::chrono::milliseconds(32);
+
+        auto wakeup = std::chrono::high_resolution_clock::now();
+        while (running_) {
+            wakeup = wakeup + interval;
+            std::this_thread::sleep_until(wakeup);
+            write(audio_pipe[1], "W", 1);
+        }
+    });
 
     // Attach the uWS Loop to our uv_loop in this thread
     uWS::Loop::get(&loop);
@@ -741,8 +751,8 @@ void Server::Internal::worker_() {
     uWS::Loop::get()->free();
 
     // Stop worker_timer
-    uv_timer_stop(&worker_timer);
-    uv_close(reinterpret_cast<uv_handle_t*>(&worker_timer), nullptr);
+    //uv_timer_stop(&worker_timer);
+    //uv_close(reinterpret_cast<uv_handle_t*>(&worker_timer), nullptr);
 
     // Stop timer
     uv_timer_stop(&timer);
@@ -752,6 +762,11 @@ void Server::Internal::worker_() {
     uv_poll_stop(&ctrl_poll);
     uv_close(reinterpret_cast<uv_handle_t*>(&ctrl_poll), nullptr);
 
+    // Stop audio poll
+    uv_poll_stop(&audio_poll);
+    uv_close(reinterpret_cast<uv_handle_t*>(&audio_poll), nullptr);
+    t.join();
+
     // Final uv cleanup (yes, libuv is strange...)
     ret = uv_run(&loop, UV_RUN_NOWAIT);
     //if (ret != 0) std::cerr << "Status: Loop still has stuff to handle, third invocation of uv_run() returned " << ret << "\n";
@@ -760,6 +775,38 @@ void Server::Internal::worker_() {
     if (ret < 0) std::cerr << "Error: Failed to close uv_loop, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
     std::cout << "Worker stopped for server " << this << std::endl;
+}
+
+void Server::Internal::send_audio_(void) {
+    int fs = 16000; // Hz
+    float tone_fq = 800.0; // Hz
+
+    // Fill buffer from sine wave generated with sin(2 * PI * f) @ 16kHz
+    for (int i = 0; i < 512; i++) {
+        sample_buffer_[i] = (short)(std::sin(2.0 * std::numbers::pi * tone_fq * (float)sample_idx_ / (float)fs) * (float)SHRT_MAX / 10.0);
+        sample_idx_++;
+        if (sample_idx_ == fs) sample_idx_ = 0;
+    }
+
+    // Update frame counter
+    sample_buffer_[512]++;
+
+    // Loop over active sessions and send data if active websockets connection exist
+    for (auto& [id, session] : sessions) {
+        std::string_view data{(char*)sample_buffer_, 1026};
+        if (session.std_ws) {
+            auto status = session.std_ws->send(data, uWS::OpCode::BINARY);
+            if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
+                std::cerr << "Error: Unable to send ws message\n";
+            }
+        }
+        if (session.tls_ws) {
+            auto status = session.tls_ws->send(data, uWS::OpCode::BINARY);
+            if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
+                std::cerr << "Error: Unable to send ws message\n";
+            }
+        }
+    }
 }
 
 
