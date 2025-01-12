@@ -117,9 +117,9 @@ class AudioProcessor extends AudioWorkletProcessor {
                 // Send status back to our Node
                 this.port.postMessage({ bufferDepth: this.bufferDepth });
 
-                if (this.lastReadPtr == this.readPtr) {
-                    console.log('We wrote more than once for the same readPtr(' + this.readPtr + '). bufferDepth=' + this.bufferDepth);
-                }
+                //if (this.lastReadPtr == this.readPtr) {
+                //    console.log('We wrote more than once for the same readPtr(' + this.readPtr + '). bufferDepth=' + this.bufferDepth);
+                //}
                 this.lastReadPtr = this.readPtr;
             } else {
                 // Buffer overflow
@@ -194,9 +194,9 @@ class AudioProcessor extends AudioWorkletProcessor {
                 this.bufferDepth = this.bufferDepth - 1;
                 //console.log('Successfull play from pos ' + aquiredReadPtr + '. writePtr=' + this.writePtr + ', bufferDepth=' + this.bufferDepth);
 
-                if (this.lastWritePtr == this.writePtr) {
-                    console.log('We read more than once for the same writePtr(' + this.writePtr + '). bufferDepth=' + this.bufferDepth);
-                }
+                //if (this.lastWritePtr == this.writePtr) {
+                //    console.log('We read more than once for the same writePtr(' + this.writePtr + '). bufferDepth=' + this.bufferDepth);
+                //}
                 this.lastWritePtr = this.writePtr;
             }
         } else {
