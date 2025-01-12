@@ -96,10 +96,10 @@ private:
     std::string get_session_id() {
         uint64_t rn = random_distribution_(random_generator_);
 #ifdef USE_FORMAT
-        std::string rs = std::format("{:08x}", rn);
+        std::string rs = std::format("{:016x}", rn);
 #else
         char tmp_str[24];
-        sprintf(tmp_str, "%.08" PRIx64, rn);
+        sprintf(tmp_str, "%.016" PRIx64, rn);
         std::string rs{tmp_str};
 #endif
         return rs;
@@ -768,6 +768,8 @@ void Server::Internal::worker_() {
     uv_poll_stop(&audio_poll);
     uv_close(reinterpret_cast<uv_handle_t*>(&audio_poll), nullptr);
     t.join();
+    close(audio_pipe[0]);
+    close(audio_pipe[1]);
 
     // Final uv cleanup (yes, libuv is strange...)
     ret = uv_run(&loop, UV_RUN_NOWAIT);
