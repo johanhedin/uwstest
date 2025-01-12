@@ -58,7 +58,8 @@ private:
         std::string                                        id{};
         std::chrono::time_point<std::chrono::steady_clock> last_activity{};
         std::chrono::time_point<std::chrono::steady_clock> ws_ping_sent{};
-        uWS::WebSocket<false, true, WsConData>*            ws{nullptr};
+        uWS::WebSocket<false, true, WsConData>*            std_ws{nullptr};
+        uWS::WebSocket<true, true, WsConData>*             tls_ws{nullptr};
         double                                             rtt{0.0};
         std::string                                        rtt_str{"0"};
     };
@@ -211,15 +212,23 @@ void Server::Internal::worker_() {
 
             auto now = std::chrono::steady_clock::now();
             std::chrono::duration<double> session_age{now - session.last_activity};
-            if (!session.ws && session_age > 30s) {
+            if (!session.std_ws && !session.tls_ws && session_age > 30s) {
                 std::cout << "Removing inactive session " << session.id << std::endl;
                 return true;
             }
 
-            if (session.ws) {
+            if (session.std_ws) {
                 session.ws_ping_sent = std::chrono::steady_clock::now();
-                auto status = session.ws->send("ping", uWS::OpCode::PING);
-                if (status != std::remove_pointer<decltype(session.ws)>::type::SUCCESS) {
+                auto status = session.std_ws->send("ping", uWS::OpCode::PING);
+                if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
+                    std::cerr << "Error: Unable to send websocket ping to client\n";
+                }
+            }
+
+            if (session.tls_ws) {
+                session.ws_ping_sent = std::chrono::steady_clock::now();
+                auto status = session.tls_ws->send("ping", uWS::OpCode::PING);
+                if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
                     std::cerr << "Error: Unable to send websocket ping to client\n";
                 }
             }
@@ -255,10 +264,16 @@ void Server::Internal::worker_() {
 
         // Loop over active sessions and send data if active websockets connection exist
         for (auto& [id, session] : self.sessions) {
-            if (session.ws) {
-                std::string_view data{(char*)self.sample_buffer_, 1026};
-                auto status = session.ws->send(data, uWS::OpCode::BINARY);
-                if (status != std::remove_pointer<decltype(session.ws)>::type::SUCCESS) {
+            std::string_view data{(char*)self.sample_buffer_, 1026};
+            if (session.std_ws) {
+                auto status = session.std_ws->send(data, uWS::OpCode::BINARY);
+                if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
+                    std::cerr << "Error: Unable to send ws message\n";
+                }
+            }
+            if (session.tls_ws) {
+                auto status = session.tls_ws->send(data, uWS::OpCode::BINARY);
+                if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
                     std::cerr << "Error: Unable to send ws message\n";
                 }
             }
@@ -396,7 +411,7 @@ void Server::Internal::worker_() {
         },
         .open = [&](auto* ws) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
-            session.ws = ws;
+            session.std_ws = ws;
             std::cout << "WebSocket connection for session " << session.id << " opend\n";
         },
         .message = [&](auto* ws, std::string_view message, uWS::OpCode op_code) {
@@ -445,7 +460,7 @@ void Server::Internal::worker_() {
 
             std::cout << "ws closed for session " << session.id << ". code = " << code << ", message = " << message << std::endl;
 
-            session.ws = nullptr;
+            session.std_ws = nullptr;
         }
     });
 
@@ -485,7 +500,7 @@ void Server::Internal::worker_() {
             res->writeStatus("404 Not Found");
             res->writeHeader("Content-Type", "text/plain")->end("404 Not Found\n");
         //}).get("/*", [&](uWS::HttpResponse<true>* res, uWS::HttpRequest *req) {
-        }).get("/*", [&](auto* res, auto *req) {
+        }).get("/*", [&](auto* res, auto* req) {
             std::string url{req->getUrl()};
             if (url == "/") url = "/index.html";
             std::string file_path = settings_.webroot + url;
@@ -496,6 +511,25 @@ void Server::Internal::worker_() {
             // Check if the file exists
             if (std::filesystem::is_regular_file(file_path) && !std::filesystem::is_symlink(file_path)) {
                 std::string content = read_file(file_path);
+
+                auto now = std::chrono::steady_clock::now();
+
+                std::string cookie{req->getHeader("cookie")};
+                std::cout << "Incoming cookie: " << cookie << ". Looking for session...\n";
+                auto session_map = sessions.find(cookie);
+                if (session_map != sessions.end()) {
+                    // Session found
+                    std::cout << "Session " << cookie << " found\n";
+                    session_map->second.last_activity = now;
+                } else {
+                    // Create new session
+                    std::cout << "No active session, creating new\n";
+                    std::string id{get_session_id()};
+                    std::cout << "New session: " << id << "\n";
+                    sessions[id] = Session({ .id = id, .last_activity = now });
+
+                    res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
+                }
 
                 // Determine content type based on file extension
                 std::string contentType = "text/plain";
@@ -517,6 +551,90 @@ void Server::Internal::worker_() {
                 // File not found
                 res->writeStatus("404 Not Found");
                 res->writeHeader("Content-Type", "text/plain")->end("404 Not Found\n");
+            }
+        });
+
+        tls_app->ws<WsConData>("/ws", {
+            // Settings
+            .compression = uWS::SHARED_COMPRESSOR,
+            .maxPayloadLength = 16 * 1024,
+            .idleTimeout = 10,
+            .maxBackpressure = 1 * 1024 * 1024,
+            .sendPingsAutomatically = false,
+            // Handlers
+            .upgrade = [&](auto* res, auto* req, auto* context) {
+                std::string cookie{req->getHeader("cookie")};
+                std::cout << "Incoming WS UPGRADE. Cookie: " << cookie << ". Looking for session...\n";
+                auto session_pair = sessions.find(cookie);
+                if (session_pair != sessions.end()) {
+                    // Session found
+                    std::cout << "Session " << cookie << " found. Accepting WS UPGRADE\n";
+                    res->template upgrade<WsConData>(
+                        { .session = &session_pair->second },
+                        req->getHeader("sec-websocket-key"),
+                        req->getHeader("sec-websocket-protocol"),
+                        req->getHeader("sec-websocket-extensions"),
+                        context
+                    );
+                } else {
+                    std::cout << "No session found for cookie " << cookie << ". Denying upgrade.\n";
+                    res->writeStatus("404 Not Found");
+                    res->writeHeader("Content-Type", "text/plain")->end("404 Not Found\n");
+                }
+            },
+            .open = [&](auto* ws) {
+                Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+                session.tls_ws = ws;
+                std::cout << "WebSocket connection for session " << session.id << " opend\n";
+            },
+            .message = [&](auto* ws, std::string_view message, uWS::OpCode op_code) {
+                Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+
+                if (op_code == uWS::OpCode::TEXT) {
+                    std::cout << "ws.message(), message = " << message << " from session " << session.id << std::endl;
+                } else if (op_code == uWS::OpCode::BINARY) {
+                    std::cout << "ws.message(), message = 0x";
+                    auto it = message.begin();
+                    while (it != message.end()) {
+#ifdef USE_FORMAT
+                        std::cout << std::format("{:#04x}", *it);
+#endif
+                        ++it;
+                    }
+                    std::cout << "\n";
+                } else {
+                    std::cerr << "Error: Unknown opcoded received from client\n";
+                }
+            },
+            .drain = [](auto* /*ws*/) {
+                // Check ws->getBufferedAmount() here
+            },
+            .ping = [&](auto* /*ws*/, std::string_view message) {
+                // You don't need to handle this one, we automatically respond to pings as per standard
+                std::cout << ": ws.ping(), message = " << message << std::endl;
+            },
+            //.pong = [&](uWS::WebSocket<true, true, WsConData>* ws, std::string_view message) {
+            .pong = [&](auto* ws, std::string_view message) {
+                Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+                const auto now = std::chrono::steady_clock::now();
+
+                const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
+
+                session.rtt = rtt.count() * 1000.0;
+#ifdef USE_FORMAT
+                session.rtt_str = std::format("{:.1f}", session.rtt);
+#else
+                session.rtt_str = "dummy";
+#endif
+                std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
+                            session.rtt_str << "ms, message = " << message << std::endl;
+            },
+            .close = [&](auto* ws, int code, std::string_view message) {
+                Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+
+                std::cout << "ws closed for session " << session.id << ". code = " << code << ", message = " << message << std::endl;
+
+                session.tls_ws = nullptr;
             }
         });
 
