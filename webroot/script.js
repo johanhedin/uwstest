@@ -103,6 +103,8 @@ async function startStreaming() {
         //stop_button.disabled = true;
         //ws = null;
         send_button.disabled = true;
+        stop_button.disabled = true;
+        start_button.disabled = false;
     };
 
     ws.onerror = (event) => {
