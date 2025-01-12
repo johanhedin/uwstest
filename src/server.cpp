@@ -16,6 +16,7 @@
 #include <format>
 #include <cmath>
 #include <numbers>
+#include <cassert>
 
 // C libraires that we use
 #include <uv.h>
@@ -513,7 +514,44 @@ void Server::Internal::worker_() {
                 int         remote_port{us_socket_remote_port(1, reinterpret_cast<us_socket_t*>(res))};
                 std::cout << "Incoming https GET to auth from " + remote_addr + ":" << remote_port << " to server " << this << std::endl;
 
-                std::string cn{};
+                SSL* ssl = reinterpret_cast<SSL*>(res->getNativeHandle());
+                assert(ssl != nullptr);
+
+                // See x509_vfy.h for possible return values
+                long ssl_verify_result = SSL_get_verify_result(ssl);
+                std::cout << "ssl_verify_result() == " << ssl_verify_result << std::endl;
+
+                std::string c;
+                std::string o;
+                std::string ou;
+                std::string cn;
+
+                auto peer_cert = SSL_get0_peer_certificate(ssl);
+                if (peer_cert) {
+                    std::cout << "Client provided a valid certificate!\n";
+
+                    auto sn_obj = X509_get_subject_name(peer_cert);
+                    if (sn_obj != nullptr) {
+                        int len;
+                        char tmp_str[128];
+
+                        len = X509_NAME_get_text_by_NID(sn_obj, NID_countryName, tmp_str, sizeof(tmp_str));
+                        if (len > 0) c.assign(tmp_str, len);
+
+                        len = X509_NAME_get_text_by_NID(sn_obj, NID_organizationName, tmp_str, sizeof(tmp_str));
+                        if (len > 0) o.assign(tmp_str, len);
+
+                        len = X509_NAME_get_text_by_NID(sn_obj, NID_organizationalUnitName, tmp_str, sizeof(tmp_str));
+                        if (len > 0) ou.assign(tmp_str, len);
+
+                        len = X509_NAME_get_text_by_NID(sn_obj, NID_commonName, tmp_str, sizeof(tmp_str));
+                        if (len > 0) cn.assign(tmp_str, len);
+                    }
+
+                    std::cout << "Client certificate subject: C=" << c << ", O=" << o << ", OU=" << ou << ", CN=" << cn << std::endl;
+                } else {
+                    std::cout << "No cert provided by the client.\n";
+                }
 
                 res->writeHeader("Content-Type", "text/plain");
                 res->end("Greetings from " + settings_.auth_hostname + "\n" + "Your CN='" + cn + "'\n");
