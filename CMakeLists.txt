@@ -14,9 +14,9 @@ find_package(PkgConfig REQUIRED)
 include(GNUInstallDirs)
 
 FILE(GLOB USOCKET_SRCS "uWebSockets/uSockets/src/*.c"
-                       "uWebSockets/uSockets/src/eventing/*.c"
-                       "uWebSockets/uSockets/src/crypto/*.c"
-                       "uWebSockets/uSockets/src/crypto/*.cpp"
+                       "uWebSockets/uSockets/src/eventing/libuv.c"
+                       "uWebSockets/uSockets/src/crypto/openssl.c"
+                       "uWebSockets/uSockets/src/crypto/sni_tree.cpp"
 )
 add_library(usockets ${USOCKET_SRCS})
 target_include_directories(usockets PRIVATE ${PROJECT_SOURCE_DIR}/uWebSockets/uSockets/src)
@@ -29,13 +29,14 @@ target_compile_options(usockets PRIVATE "-Wno-deprecated-declarations")
 target_compile_options(usockets PRIVATE "-DLIBUS_USE_OPENSSL")
 target_compile_options(usockets PRIVATE "-DLIBUS_USE_LIBUV")
 
-add_executable(${CMAKE_PROJECT_NAME} src/main.cpp)
+add_executable(${CMAKE_PROJECT_NAME} src/main.cpp src/server.cpp)
 target_link_libraries(${CMAKE_PROJECT_NAME} usockets)
 
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wall)
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wextra)
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -pedantic)
 
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/uWebSockets/uSockets/src)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/uWebSockets/src)
 
