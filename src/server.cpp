@@ -13,7 +13,15 @@
 #include <type_traits>
 #include <cstdint>
 #include <random>
+#if __has_include(<format>)
+#define USE_FORMAT
 #include <format>
+#include <stdio.h>
+#include <inttypes.h>
+#else
+#include <stdio.h>
+#include <inttypes.h>
+#endif
 #include <cmath>
 #include <numbers>
 #include <cassert>
@@ -82,7 +90,13 @@ private:
 
     std::string get_session_id() {
         uint64_t rn = random_distribution_(random_generator_);
+#ifdef USE_FORMAT
         std::string rs = std::format("{:08x}", rn);
+#else
+        char tmp_str[24];
+        sprintf(tmp_str, "%.08" PRIx64, rn);
+        std::string rs{tmp_str};
+#endif
         return rs;
     };
 
@@ -231,7 +245,7 @@ void Server::Internal::worker_() {
 
         // Fill buffer from sine wave generated with sin(2 * PI * f) @ 16kHz
         for (int i = 0; i < 512; i++) {
-            self.sample_buffer_[i] = (short)(std::sinf(2.0 * std::numbers::pi * tone_fq * (float)self.sample_idx_ / (float)fs) * (float)SHRT_MAX / 10.0);
+            self.sample_buffer_[i] = (short)(std::sin(2.0 * std::numbers::pi * tone_fq * (float)self.sample_idx_ / (float)fs) * (float)SHRT_MAX / 10.0);
             self.sample_idx_++;
             if (self.sample_idx_ == fs) self.sample_idx_ = 0;
         }
@@ -394,7 +408,9 @@ void Server::Internal::worker_() {
                 std::cout << "ws.message(), message = 0x";
                 auto it = message.begin();
                 while (it != message.end()) {
+#ifdef USE_FORMAT
                     std::cout << std::format("{:#04x}", *it);
+#endif
                     ++it;
                 }
                 std::cout << "\n";
@@ -416,7 +432,11 @@ void Server::Internal::worker_() {
             const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
 
             session.rtt = rtt.count() * 1000.0;
+#ifdef USE_FORMAT
             session.rtt_str = std::format("{:.1f}", session.rtt);
+#else
+            session.rtt_str = "dummy";
+#endif
             std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
                          session.rtt_str << "ms, message = " << message << std::endl;
         },
