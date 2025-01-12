@@ -634,7 +634,9 @@ void Server::Internal::worker_() {
 #ifdef USE_FORMAT
                 session.rtt_str = std::format("{:.1f}", session.rtt);
 #else
-                session.rtt_str = "dummy";
+                char tmp[20];
+                sprintf(tmp, "%.1f", session.rtt);
+                session.rtt_str = tmp;
 #endif
                 std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
                             session.rtt_str << "ms, message = " << message << std::endl;
