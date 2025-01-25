@@ -334,12 +334,16 @@ void Server::Internal::worker_() {
                 session_map->second.last_activity = now;
             } else {
                 // Create new session
-                std::cout << "No active session, creating new\n";
-                std::string id{get_session_id()};
-                std::cout << "New session: " << id << "\n";
-                sessions[id] = Session({ .id = id, .last_activity = now });
+                if (sessions.size() < 10) {
+                    std::cout << "No active session, creating new\n";
+                    std::string id{get_session_id()};
+                    std::cout << "New session: " << id << "\n";
+                    sessions[id] = Session({ .id = id, .last_activity = now });
 
-                res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
+                    res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
+                } else {
+                    std::cout << "No active session but max session limit reached. Not creating new.\n";
+                }
             }
 
             // Determine content type based on file extension
@@ -522,12 +526,16 @@ void Server::Internal::worker_() {
                     session_map->second.last_activity = now;
                 } else {
                     // Create new session
-                    std::cout << "No active session, creating new\n";
-                    std::string id{get_session_id()};
-                    std::cout << "New session: " << id << "\n";
-                    sessions[id] = Session({ .id = id, .last_activity = now });
+                    if (sessions.size() < 10) {
+                        std::cout << "No active session, creating new\n";
+                        std::string id{get_session_id()};
+                        std::cout << "New session: " << id << "\n";
+                        sessions[id] = Session({ .id = id, .last_activity = now });
 
-                    res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
+                        res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
+                    } else {
+                        std::cout << "No active session but max session limit reached. Not creating new.\n";
+                    }
                 }
 
                 // Determine content type based on file extension
