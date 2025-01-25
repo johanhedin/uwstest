@@ -67,7 +67,7 @@ private:
         std::chrono::steady_clock::time_point              last_activity{};
         std::chrono::steady_clock::time_point              ws_ping_sent{};
         uWS::WebSocket<STD, SERVER, WsConData>*            std_ws{nullptr};
-        uWS::WebSocket<TLS, SERVER, WsConData>*             tls_ws{nullptr};
+        uWS::WebSocket<TLS, SERVER, WsConData>*            tls_ws{nullptr};
         double                                             rtt{0.0};
         std::string                                        rtt_str{"0"};
     };
@@ -288,11 +288,12 @@ void Server::Internal::worker_() {
 
     // Pacer in it's own thread
     auto t = std::thread([&]() {
-        const auto interval = std::chrono::milliseconds(32);
+        using namespace std::chrono_literals;
+        //const auto interval = std::chrono::milliseconds(32);
 
-        auto wakeup = std::chrono::high_resolution_clock::now();
+        auto wakeup = std::chrono::steady_clock::now();
         while (running_) {
-            wakeup = wakeup + interval;
+            wakeup = wakeup + 32ms;
             std::this_thread::sleep_until(wakeup);
             write(audio_pipe[1], "W", 1);
         }
