@@ -213,16 +213,18 @@ void Server::Internal::worker_() {
         auto  loop{uv_handle_get_loop(reinterpret_cast<uv_handle_t*>(t))};
         auto& self{*reinterpret_cast<Internal*>(uv_loop_get_data(loop))};
 
-        // Use erase_if to easily loop trough all sessions (and remove if stale)
-        std::erase_if(self.sessions, [] (auto& session_pair) {
+        // Loop through all sessions and remove inactive ones. Send WebSockes
+        // ping to active ones
+        auto session_pair = self.sessions.begin();
+        while (session_pair != self.sessions.end()) {
             using namespace std::chrono_literals;
-            auto& session{session_pair.second};
+            auto& session = session_pair->second;
 
-            auto now = std::chrono::steady_clock::now();
-            std::chrono::duration<double> session_age{now - session.last_activity};
+            auto session_age = std::chrono::steady_clock::now() - session.last_activity;
             if (!session.std_ws && !session.tls_ws && session_age > 30s) {
                 std::cout << "Removing inactive session " << session.id << std::endl;
-                return true;
+                session_pair = self.sessions.erase(session_pair);
+                continue;
             }
 
             if (session.std_ws) {
@@ -241,8 +243,8 @@ void Server::Internal::worker_() {
                 }
             }
 
-            return false;
-        });
+            ++session_pair;
+        }
     }, 0, 5000);
     if (ret < 0) std::cerr << "Error: Unable to start idle timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
