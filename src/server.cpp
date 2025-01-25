@@ -454,7 +454,8 @@ void Server::Internal::worker_() {
             // You don't need to handle this one, we automatically respond to pings as per standard
             std::cout << ": ws.ping(), message = " << message << std::endl;
         },
-        .pong = [&](uWS::WebSocket<STD, SERVER, WsConData>* ws, std::string_view message) {
+        //.pong = [&](uWS::WebSocket<STD, SERVER, WsConData>* ws, std::string_view message) {
+        .pong = [&](auto* ws, std::string_view message) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
             const auto now = std::chrono::steady_clock::now();
 
