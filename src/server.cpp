@@ -16,13 +16,12 @@
 #if __has_include(<format>)
 #define USE_FORMAT
 #include <format>
-//#include <stdio.h>
-//#include <inttypes.h>
 #else
 #include <stdio.h>
 #include <inttypes.h>
 #endif
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <cassert>
 
@@ -773,7 +772,8 @@ void Server::Internal::send_audio_(void) {
 
     // Fill buffer from sine wave generated with sin(2 * PI * f) @ 16kHz
     for (int i = 0; i < 512; i++) {
-        sample_buffer_[i] = (short)(std::sin(2.0 * std::numbers::pi * tone_fq * (float)sample_idx_ / (float)fs) * (float)SHRT_MAX / 10.0);
+        float sample = std::sin(2.0f * std::numbers::pi * tone_fq * static_cast<float>(sample_idx_)/static_cast<float>(fs)) * std::numeric_limits<short>::max();
+        sample_buffer_[i] = static_cast<short>(sample / 10.0f);
         sample_idx_++;
         if (sample_idx_ == fs) sample_idx_ = 0;
     }
