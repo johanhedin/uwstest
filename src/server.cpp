@@ -774,8 +774,7 @@ void Server::Internal::send_audio_(void) {
     for (int i = 0; i < 512; i++) {
         float sample = std::sin(2.0f * std::numbers::pi * tone_fq * static_cast<float>(sample_idx_)/static_cast<float>(fs)) * std::numeric_limits<short>::max();
         sample_buffer_[i] = static_cast<short>(sample / 10.0f);
-        sample_idx_++;
-        if (sample_idx_ == fs) sample_idx_ = 0;
+        if (++sample_idx_ == fs) sample_idx_ = 0;
     }
 
     // Update frame counter
@@ -783,7 +782,7 @@ void Server::Internal::send_audio_(void) {
 
     // Loop over active sessions and send data if active websockets connection exist
     for (auto& [id, session] : sessions) {
-        std::string_view data{(char*)sample_buffer_, 1026};
+        std::string_view data{reinterpret_cast<char*>(sample_buffer_), 1026};
         if (session.std_ws) {
             auto status = session.std_ws->send(data, uWS::OpCode::BINARY);
             if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
