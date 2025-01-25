@@ -69,7 +69,6 @@ private:
         uWS::WebSocket<STD, SERVER, WsConData>*            std_ws{nullptr};
         uWS::WebSocket<TLS, SERVER, WsConData>*            tls_ws{nullptr};
         double                                             rtt{0.0};
-        std::string                                        rtt_str{"0"};
     };
 
     Server::Settings               settings_;
@@ -466,12 +465,12 @@ void Server::Internal::worker_() {
 
             session.rtt = rtt.count() * 1000.0;
 #ifdef USE_FORMAT
-            session.rtt_str = std::format("{:.1f}", session.rtt);
+            std::string rtt_str = std::format("{:.1f}", session.rtt);
 #else
-            session.rtt_str = "dummy";
+            std::string rtt_str = "dummy";
 #endif
             std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
-                         session.rtt_str << "ms, message = " << message << std::endl;
+                         rtt_str << "ms, message = " << message << std::endl;
         },
         .close = [&](auto* ws, int code, std::string_view message) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
@@ -640,14 +639,14 @@ void Server::Internal::worker_() {
 
                 session.rtt = rtt.count() * 1000.0;
 #ifdef USE_FORMAT
-                session.rtt_str = std::format("{:.1f}", session.rtt);
+                std::string rtt_str = std::format("{:.1f}", session.rtt);
 #else
                 char tmp[20];
                 sprintf(tmp, "%.1f", session.rtt);
-                session.rtt_str = tmp;
+                std::string rtt_str = tmp;
 #endif
                 std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
-                            session.rtt_str << "ms, message = " << message << std::endl;
+                            rtt_str << "ms, message = " << message << std::endl;
             },
             .close = [&](auto* ws, int code, std::string_view message) {
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
