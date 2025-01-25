@@ -16,8 +16,8 @@
 #if __has_include(<format>)
 #define USE_FORMAT
 #include <format>
-#include <stdio.h>
-#include <inttypes.h>
+//#include <stdio.h>
+//#include <inttypes.h>
 #else
 #include <stdio.h>
 #include <inttypes.h>
@@ -290,7 +290,6 @@ void Server::Internal::worker_() {
     // Pacer in it's own thread
     auto t = std::thread([&]() {
         using namespace std::chrono_literals;
-        //const auto interval = std::chrono::milliseconds(32);
 
         auto wakeup = std::chrono::steady_clock::now();
         while (running_) {
@@ -467,7 +466,9 @@ void Server::Internal::worker_() {
 #ifdef USE_FORMAT
             std::string rtt_str = std::format("{:.1f}", session.rtt);
 #else
-            std::string rtt_str = "dummy";
+            char tmp[20];
+            sprintf(tmp, "%.1f", session.rtt);
+            std::string rtt_str = tmp;
 #endif
             std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
                          rtt_str << "ms, message = " << message << std::endl;
@@ -715,7 +716,7 @@ void Server::Internal::worker_() {
             });
         }
 
-        for (auto &socket : settings_.tls_sockets) {
+        for (auto& socket : settings_.tls_sockets) {
             std::string addr{socket.first};
             int         port{socket.second};
             tls_app->listen(addr, port, LIBUS_LISTEN_EXCLUSIVE_PORT, [this, addr, port](auto* listen_socket) {
