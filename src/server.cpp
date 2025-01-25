@@ -53,6 +53,10 @@ public:
     void stop();
 
 private:
+    constexpr static bool STD = false;
+    constexpr static bool TLS = true;
+    constexpr static bool SERVER = true;
+
     class Session;
     struct WsConData {
         Session* session;
@@ -60,10 +64,10 @@ private:
 
     struct Session {
         std::string                                        id{};
-        std::chrono::time_point<std::chrono::steady_clock> last_activity{};
-        std::chrono::time_point<std::chrono::steady_clock> ws_ping_sent{};
-        uWS::WebSocket<false, true, WsConData>*            std_ws{nullptr};
-        uWS::WebSocket<true, true, WsConData>*             tls_ws{nullptr};
+        std::chrono::steady_clock::time_point              last_activity{};
+        std::chrono::steady_clock::time_point              ws_ping_sent{};
+        uWS::WebSocket<STD, SERVER, WsConData>*            std_ws{nullptr};
+        uWS::WebSocket<TLS, SERVER, WsConData>*             tls_ws{nullptr};
         double                                             rtt{0.0};
         std::string                                        rtt_str{"0"};
     };
@@ -450,7 +454,7 @@ void Server::Internal::worker_() {
             // You don't need to handle this one, we automatically respond to pings as per standard
             std::cout << ": ws.ping(), message = " << message << std::endl;
         },
-        .pong = [&](uWS::WebSocket<false, true, WsConData>* ws, std::string_view message) {
+        .pong = [&](uWS::WebSocket<STD, SERVER, WsConData>* ws, std::string_view message) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
             const auto now = std::chrono::steady_clock::now();
 
@@ -623,7 +627,7 @@ void Server::Internal::worker_() {
                 // You don't need to handle this one, we automatically respond to pings as per standard
                 std::cout << ": ws.ping(), message = " << message << std::endl;
             },
-            //.pong = [&](uWS::WebSocket<true, true, WsConData>* ws, std::string_view message) {
+            //.pong = [&](uWS::WebSocket<TLS, SERVER, WsConData>* ws, std::string_view message) {
             .pong = [&](auto* ws, std::string_view message) {
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
                 const auto now = std::chrono::steady_clock::now();
