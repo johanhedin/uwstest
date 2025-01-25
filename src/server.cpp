@@ -250,24 +250,6 @@ void Server::Internal::worker_() {
     // Init our frame counter
     sample_buffer_[512] = 0;
 
-    /*
-    uv_timer_t worker_timer;
-    ret = uv_timer_init(&loop, &worker_timer);
-    if (ret < 0) std::cerr << "Error: Unable to initialize worker timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
-
-    // This is the worker timer for the server. Runs the function below every 32ms
-    ret = uv_timer_start(&worker_timer, [](uv_timer_t* t) {
-        auto  loop{uv_handle_get_loop(reinterpret_cast<uv_handle_t*>(t))};
-        //auto& self{*reinterpret_cast<Internal*>(uv_loop_get_data(loop))};
-
-        //self.send_audio_();
-
-        uv_update_time(loop);
-    }, 0, 32);
-    if (ret < 0) std::cerr << "Error: Unable to start worker timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
-    uv_timer_set_repeat(&worker_timer, 32);
-    */
-
     int        audio_pipe[2];
     uv_poll_t  audio_poll;
 
@@ -759,10 +741,6 @@ void Server::Internal::worker_() {
 
     // Detach the uWS Loop from our uv_loop
     uWS::Loop::get()->free();
-
-    // Stop worker_timer
-    //uv_timer_stop(&worker_timer);
-    //uv_close(reinterpret_cast<uv_handle_t*>(&worker_timer), nullptr);
 
     // Stop timer
     uv_timer_stop(&timer);
