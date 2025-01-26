@@ -789,6 +789,11 @@ void Server::Internal::send_audio_(void) {
 
     // Loop over active sessions and send data if active websockets connection exist
     for (auto& [id, session] : sessions) {
+        // TODO: Investigate if uWS copies the data to be sent or not and move
+        //       the buffer outside of the loop
+        // TODO: Inspect client_buffer_depth and skip a frame here and there
+        //       when the client buffer is "to full". Need to do it slowly through
+        //       so that we can receive changes from the client
         std::string_view data{reinterpret_cast<char*>(sample_buffer_), 1026};
         if (session.std_ws) {
             auto status = session.std_ws->send(data, uWS::OpCode::BINARY);
