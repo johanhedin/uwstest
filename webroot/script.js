@@ -63,7 +63,10 @@ async function startStreaming() {
         if (event.data.bufferDepth != bufferDepth) {
             bufferDepth = event.data.bufferDepth;
             content_div.innerText = 'bufferDepth: ' + bufferDepth;
-            ws.send('' + bufferDepth);
+            const pdu = new Uint8Array(2);
+            pdu[0] = 1;
+            pdu[1] = bufferDepth;
+            ws.send(pdu);
         }
     };
 

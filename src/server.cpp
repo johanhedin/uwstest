@@ -408,16 +408,31 @@ void Server::Internal::worker_() {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
             if (op_code == uWS::OpCode::TEXT) {
-                //std::cout << "ws.message(), message = " << message << " from session " << session.id << std::endl;
-                session.client_buffer_depth = std::stoi(std::string(message));
+                spdlog::info("[{:016x}] [{}] Message from client: {}", reinterpret_cast<uint64_t>(ws), session.id, message);
             } else if (op_code == uWS::OpCode::BINARY) {
-                std::cout << "ws.message(), message = 0x";
-                auto it = message.begin();
-                while (it != message.end()) {
-                    std::cout << std::format("{:#04x}", *it);
-                    ++it;
+                if (message.size() > 0) {
+                    auto msg = message[0];
+                    switch (msg) {
+                        case 0x01:
+                            if (message.size() == 2) {
+                                session.client_buffer_depth = message[1];
+                            } else {
+                                spdlog::error("[{:016x}] [{}] Invalid length for message type 0x01", reinterpret_cast<uint64_t>(ws), session.id);
+                            }
+                            break;
+                        default:
+                            spdlog::error("[{:016x}] [{}] Unknown message type ({}) received from WebSocket client", reinterpret_cast<uint64_t>(ws), session.id, msg);
+                            std::cerr << "message = 0x";
+                            auto it = message.begin();
+                            while (it != message.end()) {
+                                std::cout << std::format("{:02x}", *it);
+                                ++it;
+                            }
+                            std::cerr << std::endl;
+                    }
+                } else {
+                    spdlog::error("[{:016x}] [{}] Empty PDU received from WebSocket client", reinterpret_cast<uint64_t>(ws), session.id);
                 }
-                std::cout << "\n";
             } else {
                 std::cerr << "Error: Unknown opcoded received from client\n";
             }
@@ -575,22 +590,37 @@ void Server::Internal::worker_() {
                 spdlog::info("[{:016x}] [{}] WebSocket connection opened", reinterpret_cast<uint64_t>(ws), session.id);
             },
             .message = [&](auto* ws, std::string_view message, uWS::OpCode op_code) {
-                Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+            Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
-                if (op_code == uWS::OpCode::TEXT) {
-                    //std::cout << "ws.message(), message = " << message << " from session " << session.id << std::endl;
-                    session.client_buffer_depth = std::stoi(std::string(message));
-                } else if (op_code == uWS::OpCode::BINARY) {
-                    std::cout << "ws.message(), message = 0x";
-                    auto it = message.begin();
-                    while (it != message.end()) {
-                        std::cout << std::format("{:#04x}", *it);
-                        ++it;
+            if (op_code == uWS::OpCode::TEXT) {
+                spdlog::info("[{:016x}] [{}] Message from client: {}", reinterpret_cast<uint64_t>(ws), session.id, message);
+            } else if (op_code == uWS::OpCode::BINARY) {
+                if (message.size() > 0) {
+                    auto msg = message[0];
+                    switch (msg) {
+                        case 0x01:
+                            if (message.size() == 2) {
+                                session.client_buffer_depth = message[1];
+                            } else {
+                                spdlog::error("[{:016x}] [{}] Invalid length for message type 0x01", reinterpret_cast<uint64_t>(ws), session.id);
+                            }
+                            break;
+                        default:
+                            spdlog::error("[{:016x}] [{}] Unknown message type ({}) received from WebSocket client", reinterpret_cast<uint64_t>(ws), session.id, msg);
+                            std::cerr << "message = 0x";
+                            auto it = message.begin();
+                            while (it != message.end()) {
+                                std::cout << std::format("{:02x}", *it);
+                                ++it;
+                            }
+                            std::cerr << std::endl;
                     }
-                    std::cout << "\n";
                 } else {
-                    std::cerr << "Error: Unknown opcoded received from client\n";
+                    spdlog::error("[{:016x}] [{}] Empty PDU received from WebSocket client", reinterpret_cast<uint64_t>(ws), session.id);
                 }
+            } else {
+                std::cerr << "Error: Unknown opcoded received from client\n";
+            }
             },
             .drain = [&](auto*) {
                 // Check ws->getBufferedAmount() here
