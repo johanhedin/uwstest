@@ -89,8 +89,8 @@ int main(int argc, char** argv) {
                     run = false;
                     break;
                 case SIGHUP:
-                    // Do nothing
-                    spdlog::info("SIGHUP received");
+                    spdlog::info("SIGHUP received. Restaring server");
+                    s1.restart();
                     break;
                 default:
                     // Ignore "unknown" signals
