@@ -17,7 +17,7 @@
 #include <format>
 #else
 #include <fmt/core.h>
-namespace std { using fmt::format; } // std::format polyfill using fmtlib
+namespace std { using fmt::format; } // std::format polyfill using fmt
 #endif
 #include <cmath>
 #include <limits>
@@ -152,9 +152,8 @@ void Server::Internal::worker_() {
     int       ret;
     uv_loop_t loop;
 
-    //std::cout << "Worker started for server " << this << std::endl;
     spdlog::info("Worker started for server {}", reinterpret_cast<void*>(this));
-    std::cout << "Settings:\n";
+    spdlog::info("Settings:");
     std::cout << "    std_sockets="; for (auto& s : settings_.std_sockets) { std::cout << s.first << ":" << s.second << " "; }; std::cout << std::endl;
     std::cout << "    tls_sockets="; for (auto& s : settings_.tls_sockets) { std::cout << s.first << ":" << s.second << " "; }; std::cout << std::endl;
     std::cout << "    crt_file=" << settings_.crt_file << std::endl;
@@ -164,7 +163,7 @@ void Server::Internal::worker_() {
     std::cout << "    webroot=" << settings_.webroot << std::endl;
 
     ret = uv_loop_init(&loop);
-    if (ret < 0) std::cerr << "Error: Unable to create uv_loop, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
+    if (ret < 0) spdlog::error("Unable to create uv_loop, ret = {} ({})", ret, uv_strerror(ret));
 
     // Attach our instance to the loop. Can be used in callbacks later on to get "this"
     uv_loop_set_data(&loop, reinterpret_cast<void*>(this));
@@ -172,7 +171,7 @@ void Server::Internal::worker_() {
     // Create a uv_poll to watch on the quit pipe
     uv_poll_t ctrl_poll;
     ret = uv_poll_init(&loop, &ctrl_poll, ctrl_pipe[0]);
-    if (ret < 0) std::cerr << "Error: Unable to initialize uv_poll, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
+    if (ret < 0) spdlog::error("Unable to initialize ctrl_poll, ret = {} ({})", ret, uv_strerror(ret));
 
     ret = uv_poll_start(&ctrl_poll, UV_READABLE, [](uv_poll_t* p, int, int) {
         auto handle = reinterpret_cast<uv_handle_t*>(p);
@@ -183,7 +182,7 @@ void Server::Internal::worker_() {
         uv_fileno(handle, &fd);
         ret = read(fd, &cmd, 1);
         if (ret < 0) {
-            std::cerr << "Error: Unable to read command from command pipe, ret = " << ret << "(" << strerror(errno) << ")" << std::endl;
+            spdlog::error("Unable to read command from command pipe, ret = {} ({})", ret, strerror(errno));
             return;
         }
 
@@ -192,16 +191,16 @@ void Server::Internal::worker_() {
                 uv_stop(uv_handle_get_loop(handle));
                 break;
             default:
-                std::cerr << "Error: Unknown command received (" << cmd << ")\n";
+                spdlog::error("Unknown command received ({})", cmd);
                 break;
         }
     });
-    if (ret < 0) std::cerr << "Error: Unable to start uv_poll, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
+    if (ret < 0) spdlog::error("Unable to start ctrl_poll, ret = {} ({})", ret, uv_strerror(ret));
 
     // Create a uv_timer for periodic maintenance work. It is called every 5000ms
     uv_timer_t maintenance_timer;
     ret = uv_timer_init(&loop, &maintenance_timer);
-    if (ret < 0) std::cerr << "Error: Unable to initialize maintenance timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
+    if (ret < 0) spdlog::error("Unable to initialize maintenance timer, ret = {} ({})", ret, uv_strerror(ret));
 
     ret = uv_timer_start(&maintenance_timer, [](uv_timer_t* t) {
         auto  loop = uv_handle_get_loop(reinterpret_cast<uv_handle_t*>(t));
@@ -215,7 +214,7 @@ void Server::Internal::worker_() {
 
             auto session_age = std::chrono::steady_clock::now() - session.last_activity;
             if (!session.std_ws && !session.tls_ws && session_age > 30s) {
-                std::cout << "Removing inactive session " << session.id << std::endl;
+                spdlog::info("Removing inactive session {}", session.id);
                 session_pair = self.sessions.erase(session_pair);
                 continue;
             }
@@ -224,7 +223,7 @@ void Server::Internal::worker_() {
                 session.ws_ping_sent = std::chrono::steady_clock::now();
                 auto status = session.std_ws->send("ping", uWS::OpCode::PING);
                 if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
-                    std::cerr << "Error: Unable to send websocket ping to client\n";
+                    spdlog::error("Unable to send websocket ping to client");
                 }
             }
 
@@ -232,14 +231,14 @@ void Server::Internal::worker_() {
                 session.ws_ping_sent = std::chrono::steady_clock::now();
                 auto status = session.tls_ws->send("ping", uWS::OpCode::PING);
                 if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
-                    std::cerr << "Error: Unable to send websocket ping to client\n";
+                    spdlog::error("Unable to send websocket ping to client");
                 }
             }
 
             ++session_pair;
         }
     }, 0, 5000);
-    if (ret < 0) std::cerr << "Error: Unable to start maintenance timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
+    if (ret < 0) spdlog::error("Unable to start maintenance timer, ret = {} ({})", ret, uv_strerror(ret));
 
     // Create a poll and timer to create a function that is calles every 32ms
     int        audio_pipe[2];
@@ -746,9 +745,9 @@ void Server::Internal::worker_() {
     //if (ret != 0) std::cerr << "Status: Loop still has stuff to handle, third invocation of uv_run() returned " << ret << "\n";
 
     ret = uv_loop_close(&loop);
-    if (ret < 0) std::cerr << "Error: Failed to close uv_loop, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
+    if (ret < 0) spdlog::error("Failed to close uv_loop, ret = {} ({})", ret, uv_strerror(ret));
 
-    std::cout << "Worker stopped for server " << this << std::endl;
+    spdlog::info("Worker stopped for server {}", reinterpret_cast<void*>(this));
 }
 
 void Server::Internal::send_audio_(void) {
@@ -771,13 +770,13 @@ void Server::Internal::send_audio_(void) {
         if (session.std_ws) {
             auto status = session.std_ws->send(data, uWS::OpCode::BINARY);
             if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
-                std::cerr << "Error: Unable to send ws message\n";
+                spdlog::error("Error: Unable to send ws message");
             }
         }
         if (session.tls_ws) {
             auto status = session.tls_ws->send(data, uWS::OpCode::BINARY);
             if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
-                std::cerr << "Error: Unable to send ws message\n";
+                spdlog::error("Error: Unable to send ws message");
             }
         }
     }
