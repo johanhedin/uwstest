@@ -152,7 +152,7 @@ void Server::Internal::worker_() {
     int       ret;
     uv_loop_t loop;
 
-    spdlog::info("Worker started for server {}", reinterpret_cast<void*>(this));
+    spdlog::info("Server worker started");
     spdlog::info("Settings:");
     std::cout << "    std_sockets="; for (auto& s : settings_.std_sockets) { std::cout << s.first << ":" << s.second << " "; }; std::cout << std::endl;
     std::cout << "    tls_sockets="; for (auto& s : settings_.tls_sockets) { std::cout << s.first << ":" << s.second << " "; }; std::cout << std::endl;
@@ -214,7 +214,7 @@ void Server::Internal::worker_() {
 
             auto session_age = std::chrono::steady_clock::now() - session.last_activity;
             if (!session.std_ws && !session.tls_ws && session_age > 30s) {
-                spdlog::info("Removing inactive session {}", session.id);
+                spdlog::info("[0x0000000000000000] [{}] Removing inactive session", session.id);
                 session_pair = self.sessions.erase(session_pair);
                 continue;
             }
@@ -223,7 +223,7 @@ void Server::Internal::worker_() {
                 session.ws_ping_sent = std::chrono::steady_clock::now();
                 auto status = session.std_ws->send("ping", uWS::OpCode::PING);
                 if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
-                    spdlog::error("Unable to send websocket ping to client");
+                    spdlog::error("[0x{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
                 }
             }
 
@@ -231,7 +231,7 @@ void Server::Internal::worker_() {
                 session.ws_ping_sent = std::chrono::steady_clock::now();
                 auto status = session.tls_ws->send("ping", uWS::OpCode::PING);
                 if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
-                    spdlog::error("Unable to send websocket ping to client");
+                    spdlog::error("[0x{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.tls_ws), session.id);
                 }
             }
 
@@ -286,11 +286,11 @@ void Server::Internal::worker_() {
         if (con == 1) {
             std::string remote_addr{res->getRemoteAddressAsText()};
             int         remote_port{us_socket_remote_port(0, reinterpret_cast<us_socket_t*>(res))};
-            std::cout << "Incoming http connection from " + remote_addr + ":" << remote_port << " to server " << this << std::endl;
+            spdlog::info("[0x{:016x}] [----------------] Incoming http connection from {}:{}", reinterpret_cast<uint64_t>(res), remote_addr, remote_port);
             // If we like to have ban on IP-addresses, we could just do res->close() here
             // to reset the incoming connection
         } else if (con == -1) {
-            std::cout << "Client disconnected from server " << this << "\n\n";
+            spdlog::info("[0x{:016x}] [????????????????] Client disconnected from server", reinterpret_cast<uint64_t>(res));
         }
     }).any("/*", [&](auto* res, auto* req) {
         // Catch all with 404
@@ -747,7 +747,7 @@ void Server::Internal::worker_() {
     ret = uv_loop_close(&loop);
     if (ret < 0) spdlog::error("Failed to close uv_loop, ret = {} ({})", ret, uv_strerror(ret));
 
-    spdlog::info("Worker stopped for server {}", reinterpret_cast<void*>(this));
+    spdlog::info("Server worker stopped");
 }
 
 void Server::Internal::send_audio_(void) {
