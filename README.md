@@ -26,6 +26,8 @@ sudo apt-get install g++ cmake zlib1g-dev libuv1-dev libssl-dev libfmt-dev
 
 on Debian(Bookworm)/Ubuntu(LTS 22.04 and LTS 24.04)/Raspberry Pi OS(Bookworm).
 
+On Rocky/RHEL, the `epel` and `crb` repositories need to be activated as well.
+
 
 ## Build
 Build everything including the bundled uSockets with:
