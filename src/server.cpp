@@ -152,7 +152,8 @@ void Server::Internal::worker_() {
     int       ret;
     uv_loop_t loop;
 
-    std::cout << "Worker started for server " << this << std::endl;
+    //std::cout << "Worker started for server " << this << std::endl;
+    spdlog::info("Worker started for server {}", reinterpret_cast<void*>(this));
     std::cout << "Settings:\n";
     std::cout << "    std_sockets="; for (auto& s : settings_.std_sockets) { std::cout << s.first << ":" << s.second << " "; }; std::cout << std::endl;
     std::cout << "    tls_sockets="; for (auto& s : settings_.tls_sockets) { std::cout << s.first << ":" << s.second << " "; }; std::cout << std::endl;
