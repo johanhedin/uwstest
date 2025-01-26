@@ -18,6 +18,7 @@
 #else
 #include <fmt/core.h>
 namespace std { using fmt::format; } // std::format polyfill using fmtlib
+#define SPDLOG_FMT_EXTERNAL          // For spdlog
 #endif
 #include <cmath>
 #include <limits>
