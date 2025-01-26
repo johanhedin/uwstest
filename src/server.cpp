@@ -69,6 +69,7 @@ private:
         uWS::WebSocket<TLS, SERVER, WsConData>*            tls_ws{nullptr};
         double                                             rtt{0.0};
         int                                                client_buffer_depth{0};
+        bool                                               buff_depth_updated{false};
     };
 
     Server::Settings               settings_;
@@ -416,6 +417,7 @@ void Server::Internal::worker_() {
                         case 0x01:
                             if (message.size() == 2) {
                                 session.client_buffer_depth = message[1];
+                                session.buff_depth_updated = true;
                             } else {
                                 spdlog::error("[{:016x}] [{}] Invalid length for message type 0x01", reinterpret_cast<uint64_t>(ws), session.id);
                             }
@@ -601,6 +603,7 @@ void Server::Internal::worker_() {
                         case 0x01:
                             if (message.size() == 2) {
                                 session.client_buffer_depth = message[1];
+                                session.buff_depth_updated = true;
                             } else {
                                 spdlog::error("[{:016x}] [{}] Invalid length for message type 0x01", reinterpret_cast<uint64_t>(ws), session.id);
                             }
@@ -796,16 +799,26 @@ void Server::Internal::send_audio_(void) {
         //       so that we can receive changes from the client
         std::string_view data{reinterpret_cast<char*>(sample_buffer_), 1026};
         if (session.std_ws) {
-            auto status = session.std_ws->send(data, uWS::OpCode::BINARY);
-            if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
-                spdlog::error("[{:016x}] [{}] Failed to send audio data to WebSocket client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
+            if (session.buff_depth_updated && session.client_buffer_depth > 12) {
+                spdlog::warn("[{:016x}] [{}] Skipping audio frame to client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
+            } else {
+                auto status = session.std_ws->send(data, uWS::OpCode::BINARY);
+                if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
+                    spdlog::error("[{:016x}] [{}] Failed to send audio data to WebSocket client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
+                }
             }
+            session.buff_depth_updated = false;
         }
         if (session.tls_ws) {
-            auto status = session.tls_ws->send(data, uWS::OpCode::BINARY);
-            if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
-                spdlog::error("[{:016x}] [{}] Failed to send audio data to WebSocket client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
+            if (session.buff_depth_updated && session.client_buffer_depth > 12) {
+                spdlog::warn("[{:016x}] [{}] Skipping audio frame to client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
+            } else {
+                auto status = session.tls_ws->send(data, uWS::OpCode::BINARY);
+                if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
+                    spdlog::error("[{:016x}] [{}] Failed to send audio data to WebSocket client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
+                }
             }
+            session.buff_depth_updated = false;
         }
     }
 }
