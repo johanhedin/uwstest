@@ -24,6 +24,9 @@ namespace std { using fmt::format; } // std::format polyfill using fmtlib
 #include <numbers>
 #include <cassert>
 
+// C++ libraries that we use
+#include <spdlog/spdlog.h>
+
 // C libraires that we use
 #include <uv.h>
 #include <openssl/err.h>
