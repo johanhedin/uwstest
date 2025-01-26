@@ -68,6 +68,7 @@ private:
         uWS::WebSocket<STD, SERVER, WsConData>*            std_ws{nullptr};
         uWS::WebSocket<TLS, SERVER, WsConData>*            tls_ws{nullptr};
         double                                             rtt{0.0};
+        int                                                client_buffer_depth{0};
     };
 
     Server::Settings               settings_;
@@ -225,6 +226,7 @@ void Server::Internal::worker_() {
                 if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
                     spdlog::error("[{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
                 }
+                spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", reinterpret_cast<uint64_t>(session.std_ws), session.id, session.rtt, session.client_buffer_depth);
             }
 
             if (session.tls_ws) {
@@ -233,6 +235,7 @@ void Server::Internal::worker_() {
                 if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
                     spdlog::error("[{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.tls_ws), session.id);
                 }
+                spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", reinterpret_cast<uint64_t>(session.tls_ws), session.id, session.rtt, session.client_buffer_depth);
             }
 
             ++session_pair;
@@ -405,7 +408,8 @@ void Server::Internal::worker_() {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
             if (op_code == uWS::OpCode::TEXT) {
-                std::cout << "ws.message(), message = " << message << " from session " << session.id << std::endl;
+                //std::cout << "ws.message(), message = " << message << " from session " << session.id << std::endl;
+                session.client_buffer_depth = std::stoi(std::string(message));
             } else if (op_code == uWS::OpCode::BINARY) {
                 std::cout << "ws.message(), message = 0x";
                 auto it = message.begin();
@@ -432,7 +436,7 @@ void Server::Internal::worker_() {
             const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
             session.rtt = rtt.count() * 1000.0;
 
-            spdlog::info("[{:016x}] [{}] WebSocket ping response from client. RTT = {:.1f}ms", reinterpret_cast<uint64_t>(ws), session.id, session.rtt);
+            //spdlog::info("[{:016x}] [{}] WebSocket ping response from client. RTT = {:.1f}ms", reinterpret_cast<uint64_t>(ws), session.id, session.rtt);
         },
         .close = [&](auto* ws, int code, std::string_view message) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
@@ -574,7 +578,8 @@ void Server::Internal::worker_() {
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
                 if (op_code == uWS::OpCode::TEXT) {
-                    std::cout << "ws.message(), message = " << message << " from session " << session.id << std::endl;
+                    //std::cout << "ws.message(), message = " << message << " from session " << session.id << std::endl;
+                    session.client_buffer_depth = std::stoi(std::string(message));
                 } else if (op_code == uWS::OpCode::BINARY) {
                     std::cout << "ws.message(), message = 0x";
                     auto it = message.begin();
@@ -601,7 +606,7 @@ void Server::Internal::worker_() {
                 const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
                 session.rtt = rtt.count() * 1000.0;
 
-                spdlog::info("[{:016x}] [{}] WebSocket ping response from client. RTT = {:.1f}ms", reinterpret_cast<uint64_t>(ws), session.id, session.rtt);
+                //spdlog::info("[{:016x}] [{}] WebSocket ping response from client. RTT = {:.1f}ms", reinterpret_cast<uint64_t>(ws), session.id, session.rtt);
             },
             .close = [&](auto* ws, int code, std::string_view message) {
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
