@@ -7,8 +7,10 @@
 #include <vector>
 #include <functional>
 #include <chrono>
+#include <filesystem>
 
 // Internal includes
+#include "logging.hpp"
 #include "server.hpp"
 
 // Some code for playing audio received via a websocket:
@@ -22,8 +24,8 @@ static std::function<void(int)> signal_callback = nullptr;
 static void signal_handler(int signal) { signal_callback(signal); }
 
 
-int main(int, char**) {
-    std::cout << "Hello µWSTest!\n";
+int main(int argc, char** argv) {
+    spdlog::info("Hello µWSTest!");
 
     // Signal handling. We use a mutex protected deque to "send" caught signals
     // to the main thread (see further down). SIGINT/SIGTERM have priority.
@@ -43,13 +45,28 @@ int main(int, char**) {
     std::signal(SIGTERM, signal_handler);
     std::signal(SIGHUP,  signal_handler);
 
-    Server s1{{
+    Server::Settings settings{
         .std_sockets = { {"127.0.0.1", 8080} },
-        .tls_sockets = { {"127.0.0.1", 8443} },
-        .crt_file = "../srv.crt",
-        .key_file = "../srv.key",
         .webroot = "../webroot"
-    }};
+    };
+
+    // If a key and certificate file exist in the directory above cwd, activate
+    // TLS on 8443 as well
+    if (std::filesystem::is_regular_file("../srv.key") && std::filesystem::is_regular_file("../srv.crt")) {
+        settings.key_file = "../srv.key";
+        settings.crt_file = "../srv.crt";
+        settings.tls_sockets = { {"0.0.0.0", 8443} };
+
+        // If a CA exist and an argument is given, activate client auth with TLS
+        // as well. The argument is suppose to be the hostname for the auth
+        // server
+        if (std::filesystem::is_regular_file("../ca.crt") && argc > 1) {
+            settings.client_ca_file = "../ca.crt";
+            settings.auth_hostname = argv[1];
+        }
+    }
+
+    Server s1{settings};
 
     // Main loop
     bool run{true};
@@ -73,7 +90,7 @@ int main(int, char**) {
                     break;
                 case SIGHUP:
                     // Do nothing
-                    std::cout << "SIGHUP received\n";
+                    spdlog::info("SIGHUP received");
                     break;
                 default:
                     // Ignore "unknown" signals
@@ -81,6 +98,8 @@ int main(int, char**) {
             }
         }
     }
+
+    s1.stop();
 
     return 0;
 }
