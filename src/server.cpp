@@ -477,9 +477,9 @@ void Server::Internal::worker_() {
             if (con == 1) {
                 std::string remote_addr{res->getRemoteAddressAsText()};
                 int         remote_port{us_socket_remote_port(1, reinterpret_cast<us_socket_t*>(res))};
-                std::cout << "Incoming https connection from " + remote_addr + ":" << remote_port << " to server " << this << std::endl;
+                spdlog::info("[0x{:016x}] [----------------] Incoming https connection from {}:{}", reinterpret_cast<uint64_t>(res), remote_addr, remote_port);
             } else if (con == -1) {
-                std::cout << "Client disconnected\n\n";
+                spdlog::info("[0x{:016x}] [????????????????] Client disconnected from server", reinterpret_cast<uint64_t>(res));
             }
         }).any("/*", [&](auto* res, auto* req) {
             // Catch all with 404
