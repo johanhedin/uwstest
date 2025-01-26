@@ -11,8 +11,8 @@ git clone --recurse-submodules https://github.com/johanhedin/uwstest.git
 
 ## Install dependencies
 `uwstest` requires a C++20 compiler, `cmake` version 3 and depend on the `zlib`,
-`libuv`, `openssl`, `fmt` and `spdlog` libraries. Compiler and libraries can be installed
-with:
+`libuv`, `openssl`, `fmt` and `spdlog` libraries. Compiler and libraries can be
+installed with:
 
 ```console
 sudo dnf install gcc-c++ cmake zlib-devel libuv-devel openssl-devel fmt-devel spdlog-devel
@@ -48,3 +48,9 @@ Run `uwstest` from the build directory with:
 ```
 
 Stop with `Ctrl-C`.
+
+The server will by default bind to `127.0.0.1` on port 8080. If a TLS
+key/certificate file pair exist in the directory above the build directory,
+the TLS server will bind to to `0.0.0.0` on port 8443 as well.
+
+The keyfile should be named `../srv.key` and the certificate file `../srv.crt`.
