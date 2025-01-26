@@ -13,25 +13,25 @@ find_package(PkgConfig REQUIRED)
 # Use GNUInstallDirs to get standard install directories for include, lib, bin and so on
 include(GNUInstallDirs)
 
+# uSockets
 FILE(GLOB USOCKET_SRCS "uWebSockets/uSockets/src/*.c"
                        "uWebSockets/uSockets/src/eventing/libuv.c"
                        "uWebSockets/uSockets/src/crypto/openssl.c"
                        "uWebSockets/uSockets/src/crypto/sni_tree.cpp"
 )
 add_library(usockets ${USOCKET_SRCS})
-target_include_directories(usockets PRIVATE ${PROJECT_SOURCE_DIR}/uWebSockets/uSockets/src)
-
 #target_compile_options(usockets PRIVATE "-Wno-unused-parameter")
 #target_compile_options(usockets PRIVATE "-Wno-sign-compare")
 #target_compile_options(usockets PRIVATE "-Wno-use-after-free")
 target_compile_options(usockets PRIVATE "-Wno-deprecated-declarations")
-
 target_compile_options(usockets PRIVATE "-DLIBUS_USE_OPENSSL")
 target_compile_options(usockets PRIVATE "-DLIBUS_USE_LIBUV")
 
-add_executable(${CMAKE_PROJECT_NAME} src/main.cpp src/server.cpp)
-target_link_libraries(${CMAKE_PROJECT_NAME} usockets)
+target_include_directories(usockets PRIVATE ${PROJECT_SOURCE_DIR}/uWebSockets/uSockets/src)
 
+
+# Main program
+add_executable(${CMAKE_PROJECT_NAME} src/main.cpp src/server.cpp)
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wall)
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wextra)
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -pedantic)
@@ -39,6 +39,14 @@ target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -pedantic)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/uWebSockets/uSockets/src)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/uWebSockets/src)
+
+target_link_libraries(${CMAKE_PROJECT_NAME} usockets)
+
+
+# Dependencies
+pkg_check_modules(LIBFMT REQUIRED fmt)
+include_directories(${LIBFMT_INCLUDE_DIRS})
+target_link_libraries(${CMAKE_PROJECT_NAME} ${LIBFMT_LIBRARIES})
 
 pkg_check_modules(LIBUV REQUIRED libuv)
 include_directories(${LIBUV_INCLUDE_DIRS})
