@@ -793,13 +793,13 @@ void Server::Internal::send_audio_(void) {
         if (session.std_ws) {
             auto status = session.std_ws->send(data, uWS::OpCode::BINARY);
             if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
-                spdlog::error("Error: Unable to send ws message");
+                spdlog::error("[{:016x}] [{}] Failed to send audio data to WebSocket client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
             }
         }
         if (session.tls_ws) {
             auto status = session.tls_ws->send(data, uWS::OpCode::BINARY);
             if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
-                spdlog::error("Error: Unable to send ws message");
+                spdlog::error("[{:016x}] [{}] Failed to send audio data to WebSocket client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
             }
         }
     }
