@@ -14,11 +14,10 @@
 #include <cstdint>
 #include <random>
 #if __has_include(<format>)
-#define USE_FORMAT
 #include <format>
 #else
-#include <stdio.h>
-#include <inttypes.h>
+#include <fmt/core.h>
+namespace std { using fmt::format; } // std::format polyfill using fmtlib
 #endif
 #include <cmath>
 #include <limits>
@@ -97,13 +96,7 @@ private:
 
     std::string get_session_id() {
         uint64_t rn = random_distribution_(random_generator_);
-#ifdef USE_FORMAT
         std::string rs = std::format("{:016x}", rn);
-#else
-        char tmp_str[24];
-        sprintf(tmp_str, "%.016" PRIx64, rn);
-        std::string rs{tmp_str};
-#endif
         return rs;
     };
 
@@ -256,9 +249,9 @@ void Server::Internal::worker_() {
 
     uv_poll_init(&loop, &audio_poll, audio_pipe[0]);
     uv_poll_start(&audio_poll, UV_READABLE, [](uv_poll_t* p, int, int) {
-        auto  loop{uv_handle_get_loop(reinterpret_cast<uv_handle_t*>(p))};
-        auto& self{*reinterpret_cast<Internal*>(uv_loop_get_data(loop))};
         auto  handle{reinterpret_cast<uv_handle_t*>(p)};
+        auto  loop{uv_handle_get_loop(handle)};
+        auto& self{*reinterpret_cast<Internal*>(uv_loop_get_data(loop))};
         char  cmd{'X'};
         int   fd;
 
