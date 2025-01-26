@@ -18,15 +18,11 @@
 #else
 #include <fmt/core.h>
 namespace std { using fmt::format; } // std::format polyfill using fmtlib
-#define SPDLOG_FMT_EXTERNAL          // For spdlog
 #endif
 #include <cmath>
 #include <limits>
 #include <numbers>
 #include <cassert>
-
-// C++ libraries that we use
-#include <spdlog/spdlog.h>
 
 // C libraires that we use
 #include <uv.h>
@@ -36,6 +32,7 @@ namespace std { using fmt::format; } // std::format polyfill using fmtlib
 #include <openssl/x509v3.h>
 
 // Internal includes
+#include "logging.hpp"
 #include "App.h"
 
 
