@@ -305,50 +305,46 @@ void Server::Internal::worker_() {
     //}).get("/*", [&](uWS::HttpResponse<false>* res, uWS::HttpRequest* req) {
     }).get("/*", [&](auto* res, auto* req) {
         std::string url{req->getUrl()};
-        if (url == "/") url = "/index.html";
-        std::string file_path = settings_.webroot + url;
+        std::string cookie{req->getHeader("cookie")};
 
-        // TODO: Add prevention for breaking out of the webroot
-        std::cout << "Incoming GET " << file_path << " to server " << this << std::endl;
+        if (url == "/") url = "/index.html";
+        std::string requested_file = settings_.webroot + url;
+
+        auto now = std::chrono::steady_clock::now();
+
+        std::string id{"----------------"};
+        auto session_map = sessions.find(cookie);
+        if (session_map == sessions.end()) {
+            if (sessions.size() < 10) {
+                id = get_session_id();
+                sessions[id] = Session({ .id = id, .last_activity = now });
+                res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
+                spdlog::info("[{:016x}] [{}] Incoming Request. New session created", reinterpret_cast<uint64_t>(res), id);
+            } else {
+                spdlog::warn("[{:016x}] [{}] Incoming Request. Max number of sessions reached. Not creating a new one", reinterpret_cast<uint64_t>(res), id);
+            }
+        } else {
+            session_map->second.last_activity = now;
+            id = session_map->first;
+        }
+
+        spdlog::info("[{:016x}] [{}] GET {}", reinterpret_cast<uint64_t>(res), id, url);
 
         // Check if the file exists
-        if (std::filesystem::is_regular_file(file_path) && !std::filesystem::is_symlink(file_path)) {
-            std::string content = read_file(file_path);
-
-            auto now = std::chrono::steady_clock::now();
-
-            std::string cookie{req->getHeader("cookie")};
-            std::cout << "Incoming cookie: " << cookie << ". Looking for session...\n";
-            auto session_map = sessions.find(cookie);
-            if (session_map != sessions.end()) {
-                // Session found
-                std::cout << "Session " << cookie << " found\n";
-                session_map->second.last_activity = now;
-            } else {
-                // Create new session
-                if (sessions.size() < 10) {
-                    std::cout << "No active session, creating new\n";
-                    std::string id{get_session_id()};
-                    std::cout << "New session: " << id << "\n";
-                    sessions[id] = Session({ .id = id, .last_activity = now });
-
-                    res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
-                } else {
-                    std::cout << "No active session but max session limit reached. Not creating new.\n";
-                }
-            }
+        if (std::filesystem::is_regular_file(requested_file) && !std::filesystem::is_symlink(requested_file)) {
+            std::string content = read_file(requested_file);
 
             // Determine content type based on file extension
             std::string contentType = "text/plain";
-            if (file_path.ends_with(".html")) {
+            if (requested_file.ends_with(".html")) {
                 contentType = "text/html";
-            } else if (file_path.ends_with(".css")) {
+            } else if (requested_file.ends_with(".css")) {
                 contentType = "text/css";
-            } else if (file_path.ends_with(".js")) {
+            } else if (requested_file.ends_with(".js")) {
                 contentType = "application/javascript";
-            } else if (file_path.ends_with(".jpg") || file_path.ends_with(".jpeg")) {
+            } else if (requested_file.ends_with(".jpg") || requested_file.ends_with(".jpeg")) {
                 contentType = "image/jpeg";
-            } else if (file_path.ends_with(".png")) {
+            } else if (requested_file.ends_with(".png")) {
                 contentType = "image/png";
             }
 
@@ -429,21 +425,19 @@ void Server::Internal::worker_() {
             // You don't need to handle this one, we automatically respond to pings as per standard
         },
         //.pong = [&](uWS::WebSocket<STD, SERVER, WsConData>* ws, std::string_view message) {
-        .pong = [&](auto* ws, std::string_view message) {
-            Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+        .pong = [&](auto* ws, std::string_view) {
             const auto now = std::chrono::steady_clock::now();
+            Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
             const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
-
             session.rtt = rtt.count() * 1000.0;
-            std::string rtt_str = std::format("{:.1f}", session.rtt);
-            std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
-                         rtt_str << "ms, message = " << message << std::endl;
+
+            spdlog::info("[{:016x}] [{}] WebSocket ping response from client. RTT = {:.1f}ms", reinterpret_cast<uint64_t>(ws), session.id, session.rtt);
         },
         .close = [&](auto* ws, int code, std::string_view message) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
-            spdlog::info("[{:016x}] [{}] WebSocket closed. Code = {}, Message = '{}'", reinterpret_cast<uint64_t>(ws), session.id, code, message);
+            spdlog::info("[{:016x}] [{}] WebSocket connection closed. Code = {}, Message = '{}'", reinterpret_cast<uint64_t>(ws), session.id, code, message);
 
             session.std_ws = nullptr;
         }
@@ -492,50 +486,46 @@ void Server::Internal::worker_() {
         //}).get("/*", [&](uWS::HttpResponse<true>* res, uWS::HttpRequest *req) {
         }).get("/*", [&](auto* res, auto* req) {
             std::string url{req->getUrl()};
-            if (url == "/") url = "/index.html";
-            std::string file_path = settings_.webroot + url;
+            std::string cookie{req->getHeader("cookie")};
 
-            // TODO: Add prevention for breaking out of the webroot
-            std::cout << "Incoming GET " << file_path << " to server " << this << std::endl;
+            if (url == "/") url = "/index.html";
+            std::string requested_file = settings_.webroot + url;
+
+            auto now = std::chrono::steady_clock::now();
+
+            std::string id{"----------------"};
+            auto session_map = sessions.find(cookie);
+            if (session_map == sessions.end()) {
+                if (sessions.size() < 10) {
+                    id = get_session_id();
+                    sessions[id] = Session({ .id = id, .last_activity = now });
+                    res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
+                    spdlog::info("[{:016x}] [{}] Incoming Request. New session created", reinterpret_cast<uint64_t>(res), id);
+                } else {
+                    spdlog::warn("[{:016x}] [{}] Incoming Request. Max number of sessions reached. Not creating a new one", reinterpret_cast<uint64_t>(res), id);
+                }
+            } else {
+                session_map->second.last_activity = now;
+                id = session_map->first;
+            }
+
+            spdlog::info("[{:016x}] [{}] GET {}", reinterpret_cast<uint64_t>(res), id, url);
 
             // Check if the file exists
-            if (std::filesystem::is_regular_file(file_path) && !std::filesystem::is_symlink(file_path)) {
-                std::string content = read_file(file_path);
-
-                auto now = std::chrono::steady_clock::now();
-
-                std::string cookie{req->getHeader("cookie")};
-                std::cout << "Incoming cookie: " << cookie << ". Looking for session...\n";
-                auto session_map = sessions.find(cookie);
-                if (session_map != sessions.end()) {
-                    // Session found
-                    std::cout << "Session " << cookie << " found\n";
-                    session_map->second.last_activity = now;
-                } else {
-                    // Create new session
-                    if (sessions.size() < 10) {
-                        std::cout << "No active session, creating new\n";
-                        std::string id{get_session_id()};
-                        std::cout << "New session: " << id << "\n";
-                        sessions[id] = Session({ .id = id, .last_activity = now });
-
-                        res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
-                    } else {
-                        std::cout << "No active session but max session limit reached. Not creating new.\n";
-                    }
-                }
+            if (std::filesystem::is_regular_file(requested_file) && !std::filesystem::is_symlink(requested_file)) {
+                std::string content = read_file(requested_file);
 
                 // Determine content type based on file extension
                 std::string contentType = "text/plain";
-                if (file_path.ends_with(".html")) {
+                if (requested_file.ends_with(".html")) {
                     contentType = "text/html";
-                } else if (file_path.ends_with(".css")) {
+                } else if (requested_file.ends_with(".css")) {
                     contentType = "text/css";
-                } else if (file_path.ends_with(".js")) {
+                } else if (requested_file.ends_with(".js")) {
                     contentType = "application/javascript";
-                } else if (file_path.ends_with(".jpg") || file_path.ends_with(".jpeg")) {
+                } else if (requested_file.ends_with(".jpg") || requested_file.ends_with(".jpeg")) {
                     contentType = "image/jpeg";
-                } else if (file_path.ends_with(".png")) {
+                } else if (requested_file.ends_with(".png")) {
                     contentType = "image/png";
                 }
 
@@ -604,21 +594,19 @@ void Server::Internal::worker_() {
                 // You don't need to handle this one, we automatically respond to pings as per standard
             },
             //.pong = [&](uWS::WebSocket<TLS, SERVER, WsConData>* ws, std::string_view message) {
-            .pong = [&](auto* ws, std::string_view message) {
-                Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+            .pong = [&](auto* ws, std::string_view) {
                 const auto now = std::chrono::steady_clock::now();
+                Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
                 const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
-
                 session.rtt = rtt.count() * 1000.0;
-                std::string rtt_str = std::format("{:.1f}", session.rtt);
-                std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
-                            rtt_str << "ms, message = " << message << std::endl;
+
+                spdlog::info("[{:016x}] [{}] WebSocket ping response from client. RTT = {:.1f}ms", reinterpret_cast<uint64_t>(ws), session.id, session.rtt);
             },
             .close = [&](auto* ws, int code, std::string_view message) {
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
-                spdlog::info("[{:016x}] [{}] WebSocket closed. Code = {}, Message = '{}'", reinterpret_cast<uint64_t>(ws), session.id, code, message);
+                spdlog::info("[{:016x}] [{}] WebSocket connection closed. Code = {}, Message = '{}'", reinterpret_cast<uint64_t>(ws), session.id, code, message);
 
                 session.tls_ws = nullptr;
             }
