@@ -11,7 +11,7 @@ git clone --recurse-submodules https://github.com/johanhedin/uwstest.git
 
 ## Install dependencies
 `uwstest` requires a C++20 compiler, `cmake` version 3 and depend on the `zlib`,
-`libuv`, `openssl` and `fmt` libraries. Compiler and libraries can be installed
+`libuv`, `openssl`, `fmt` and `spdlog` libraries. Compiler and libraries can be installed
 with:
 
 ```console
