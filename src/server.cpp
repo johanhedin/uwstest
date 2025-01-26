@@ -148,10 +148,8 @@ void Server::Internal::restart(const Server::Settings& new_settings) {
 }
 
 void Server::Internal::worker_() {
-    int        ret;
-    uv_loop_t  loop;
-    uv_timer_t timer;
-    uv_poll_t  ctrl_poll;
+    int       ret;
+    uv_loop_t loop;
 
     std::cout << "Worker started for server " << this << std::endl;
     std::cout << "Settings:\n";
@@ -169,6 +167,8 @@ void Server::Internal::worker_() {
     // Attach our instance to the loop. Can be used in callbacks later on to get "this"
     uv_loop_set_data(&loop, reinterpret_cast<void*>(this));
 
+    // Create a uv_poll to watch on the quit pipe
+    uv_poll_t ctrl_poll;
     ret = uv_poll_init(&loop, &ctrl_poll, ctrl_pipe[0]);
     if (ret < 0) std::cerr << "Error: Unable to initialize uv_poll, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
@@ -196,16 +196,16 @@ void Server::Internal::worker_() {
     });
     if (ret < 0) std::cerr << "Error: Unable to start uv_poll, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
-    ret = uv_timer_init(&loop, &timer);
-    if (ret < 0) std::cerr << "Error: Unable to initialize idle timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
+    // Create a uv_timer for periodic maintenance work. It is called every 5000ms
+    uv_timer_t maintenance_timer;
+    ret = uv_timer_init(&loop, &maintenance_timer);
+    if (ret < 0) std::cerr << "Error: Unable to initialize maintenance timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
-    // This is the idle timer for the server. Runs the function below every 5 seconds
-    ret = uv_timer_start(&timer, [](uv_timer_t* t) {
+    ret = uv_timer_start(&maintenance_timer, [](uv_timer_t* t) {
         auto  loop = uv_handle_get_loop(reinterpret_cast<uv_handle_t*>(t));
         auto& self = *reinterpret_cast<Internal*>(uv_loop_get_data(loop));
 
-        // Loop through all sessions and remove inactive ones. Send WebSockes
-        // ping to active ones
+        // Loop through all sessions and remove inactive ones. Send WebSockes ping to active ones
         auto session_pair = self.sessions.begin();
         while (session_pair != self.sessions.end()) {
             using namespace std::chrono_literals;
@@ -237,7 +237,7 @@ void Server::Internal::worker_() {
             ++session_pair;
         }
     }, 0, 5000);
-    if (ret < 0) std::cerr << "Error: Unable to start idle timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
+    if (ret < 0) std::cerr << "Error: Unable to start maintenance timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
     int        audio_pipe[2];
     uv_poll_t  audio_poll;
@@ -723,20 +723,20 @@ void Server::Internal::worker_() {
     // Detach the uWS Loop from our uv_loop
     uWS::Loop::get()->free();
 
-    // Stop timer
-    uv_timer_stop(&timer);
-    uv_close(reinterpret_cast<uv_handle_t*>(&timer), nullptr);
-
-    // Stop quit poll
-    uv_poll_stop(&ctrl_poll);
-    uv_close(reinterpret_cast<uv_handle_t*>(&ctrl_poll), nullptr);
-
-    // Stop audio poll
+    // Stop and cleanup the audio sequencer
+    t.join();
     uv_poll_stop(&audio_poll);
     uv_close(reinterpret_cast<uv_handle_t*>(&audio_poll), nullptr);
-    t.join();
     close(audio_pipe[0]);
     close(audio_pipe[1]);
+
+    // Stop and cleanup the maintenance timer
+    uv_timer_stop(&maintenance_timer);
+    uv_close(reinterpret_cast<uv_handle_t*>(&maintenance_timer), nullptr);
+
+    // Stop and cleanup the quit poll
+    uv_poll_stop(&ctrl_poll);
+    uv_close(reinterpret_cast<uv_handle_t*>(&ctrl_poll), nullptr);
 
     // Final uv cleanup (yes, libuv is strange...)
     ret = uv_run(&loop, UV_RUN_NOWAIT);
