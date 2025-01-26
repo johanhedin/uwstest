@@ -214,7 +214,7 @@ void Server::Internal::worker_() {
 
             auto session_age = std::chrono::steady_clock::now() - session.last_activity;
             if (!session.std_ws && !session.tls_ws && session_age > 30s) {
-                spdlog::info("[0x0000000000000000] [{}] Removing inactive session", session.id);
+                spdlog::info("[----------------] [{}] Removing inactive session", session.id);
                 session_pair = self.sessions.erase(session_pair);
                 continue;
             }
@@ -223,7 +223,7 @@ void Server::Internal::worker_() {
                 session.ws_ping_sent = std::chrono::steady_clock::now();
                 auto status = session.std_ws->send("ping", uWS::OpCode::PING);
                 if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
-                    spdlog::error("[0x{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
+                    spdlog::error("[{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
                 }
             }
 
@@ -231,7 +231,7 @@ void Server::Internal::worker_() {
                 session.ws_ping_sent = std::chrono::steady_clock::now();
                 auto status = session.tls_ws->send("ping", uWS::OpCode::PING);
                 if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
-                    spdlog::error("[0x{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.tls_ws), session.id);
+                    spdlog::error("[{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.tls_ws), session.id);
                 }
             }
 
@@ -286,11 +286,11 @@ void Server::Internal::worker_() {
         if (con == 1) {
             std::string remote_addr{res->getRemoteAddressAsText()};
             int         remote_port{us_socket_remote_port(0, reinterpret_cast<us_socket_t*>(res))};
-            spdlog::info("[0x{:016x}] [----------------] Incoming http connection from {}:{}", reinterpret_cast<uint64_t>(res), remote_addr, remote_port);
+            spdlog::info("[{:016x}] [----------------] Incoming http connection from {}:{}", reinterpret_cast<uint64_t>(res), remote_addr, remote_port);
             // If we like to have ban on IP-addresses, we could just do res->close() here
             // to reset the incoming connection
         } else if (con == -1) {
-            spdlog::info("[0x{:016x}] [????????????????] Client disconnected from server", reinterpret_cast<uint64_t>(res));
+            spdlog::info("[{:016x}] [????????????????] Client disconnected from server", reinterpret_cast<uint64_t>(res));
         }
     }).any("/*", [&](auto* res, auto* req) {
         // Catch all with 404
@@ -298,7 +298,7 @@ void Server::Internal::worker_() {
         std::string url{req->getUrl()};
         std::string query{req->getQuery()};
 
-        std::cout << "Denying " << method << " " << url << (query.empty() ? "":query) << std::endl;
+        spdlog::warn("[{:016x}] [????????????????] Denying Request {} {}{}", reinterpret_cast<uint64_t>(res), method, url, (query.empty() ? "":query));
 
         res->writeStatus("404 Not Found");
         res->writeHeader("Content-Type", "text/plain")->end("404 Not Found\n");
@@ -383,11 +383,10 @@ void Server::Internal::worker_() {
         // Handlers
         .upgrade = [&](auto* res, auto* req, auto* context) {
             std::string cookie{req->getHeader("cookie")};
-            std::cout << "Incoming WS UPGRADE. Cookie: " << cookie << ". Looking for session...\n";
+
             auto session_pair = sessions.find(cookie);
             if (session_pair != sessions.end()) {
-                // Session found
-                std::cout << "Session " << cookie << " found. Accepting WS UPGRADE\n";
+                spdlog::info("[{:016x}] [{}] Accepting WebSocket upgrade", reinterpret_cast<uint64_t>(res), session_pair->first);
                 res->template upgrade<WsConData>(
                     { .session = &session_pair->second },
                     req->getHeader("sec-websocket-key"),
@@ -396,7 +395,7 @@ void Server::Internal::worker_() {
                     context
                 );
             } else {
-                std::cout << "No session found for cookie " << cookie << ". Denying upgrade.\n";
+                spdlog::warn("[{:016x}] [----------------] Denying WebSocket upgrade. No session found for cookie {}", reinterpret_cast<uint64_t>(res), cookie);
                 res->writeStatus("404 Not Found");
                 res->writeHeader("Content-Type", "text/plain")->end("404 Not Found\n");
             }
@@ -404,7 +403,7 @@ void Server::Internal::worker_() {
         .open = [&](auto* ws) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
             session.std_ws = ws;
-            std::cout << "WebSocket connection for session " << session.id << " opend\n";
+            spdlog::info("[{:016x}] [{}] WebSocket connection opened", reinterpret_cast<uint64_t>(ws), session.id);
         },
         .message = [&](auto* ws, std::string_view message, uWS::OpCode op_code) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
@@ -423,12 +422,11 @@ void Server::Internal::worker_() {
                 std::cerr << "Error: Unknown opcoded received from client\n";
             }
         },
-        .drain = [](auto* /*ws*/) {
+        .drain = [&](auto*) {
             // Check ws->getBufferedAmount() here
         },
-        .ping = [&](auto* /*ws*/, std::string_view message) {
+        .ping = [&](auto* /*ws*/, std::string_view /*message*/) {
             // You don't need to handle this one, we automatically respond to pings as per standard
-            std::cout << ": ws.ping(), message = " << message << std::endl;
         },
         //.pong = [&](uWS::WebSocket<STD, SERVER, WsConData>* ws, std::string_view message) {
         .pong = [&](auto* ws, std::string_view message) {
@@ -445,7 +443,7 @@ void Server::Internal::worker_() {
         .close = [&](auto* ws, int code, std::string_view message) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
-            std::cout << "ws closed for session " << session.id << ". code = " << code << ", message = " << message << std::endl;
+            spdlog::info("[{:016x}] [{}] WebSocket closed. Code = {}, Message = '{}'", reinterpret_cast<uint64_t>(ws), session.id, code, message);
 
             session.std_ws = nullptr;
         }
@@ -459,9 +457,9 @@ void Server::Internal::worker_() {
             if (tmp.find(':') != std::string::npos) tmp = "[" + addr + "]";
 
             if (listen_socket) {
-                std::cout << "Listening on http://" << tmp << ":" << port << " for server " << this << std::endl;
+                spdlog::info("Listening on http://{}:{}", tmp, port);
             } else {
-                std::cerr << "Error: Unable to listen on http://" << tmp << ":" << port << " for server " << this << ". Invalid or busy host/port\n";
+                spdlog::error("Unable to listen on http://{}:{}. Invalid/busy host/port", tmp, port);
             }
         });
     }
@@ -477,13 +475,18 @@ void Server::Internal::worker_() {
             if (con == 1) {
                 std::string remote_addr{res->getRemoteAddressAsText()};
                 int         remote_port{us_socket_remote_port(1, reinterpret_cast<us_socket_t*>(res))};
-                spdlog::info("[0x{:016x}] [----------------] Incoming https connection from {}:{}", reinterpret_cast<uint64_t>(res), remote_addr, remote_port);
+                spdlog::info("[{:016x}] [----------------] Incoming https connection from {}:{}", reinterpret_cast<uint64_t>(res), remote_addr, remote_port);
             } else if (con == -1) {
-                spdlog::info("[0x{:016x}] [????????????????] Client disconnected from server", reinterpret_cast<uint64_t>(res));
+                spdlog::info("[{:016x}] [????????????????] Client disconnected from server", reinterpret_cast<uint64_t>(res));
             }
         }).any("/*", [&](auto* res, auto* req) {
             // Catch all with 404
-            std::cout << "Path " << req->getUrl() << " does not exist.\n";
+            std::string method{req->getCaseSensitiveMethod()};
+            std::string url{req->getUrl()};
+            std::string query{req->getQuery()};
+
+            spdlog::warn("[{:016x}] [????????????????] Denying Request {} {}{}", reinterpret_cast<uint64_t>(res), method, url, (query.empty() ? "":query));
+
             res->writeStatus("404 Not Found");
             res->writeHeader("Content-Type", "text/plain")->end("404 Not Found\n");
         //}).get("/*", [&](uWS::HttpResponse<true>* res, uWS::HttpRequest *req) {
@@ -555,11 +558,10 @@ void Server::Internal::worker_() {
             // Handlers
             .upgrade = [&](auto* res, auto* req, auto* context) {
                 std::string cookie{req->getHeader("cookie")};
-                std::cout << "Incoming WS UPGRADE. Cookie: " << cookie << ". Looking for session...\n";
+
                 auto session_pair = sessions.find(cookie);
                 if (session_pair != sessions.end()) {
-                    // Session found
-                    std::cout << "Session " << cookie << " found. Accepting WS UPGRADE\n";
+                    spdlog::info("[{:016x}] [{}] Accepting WebSocket upgrade", reinterpret_cast<uint64_t>(res), session_pair->first);
                     res->template upgrade<WsConData>(
                         { .session = &session_pair->second },
                         req->getHeader("sec-websocket-key"),
@@ -568,7 +570,7 @@ void Server::Internal::worker_() {
                         context
                     );
                 } else {
-                    std::cout << "No session found for cookie " << cookie << ". Denying upgrade.\n";
+                    spdlog::warn("[{:016x}] [----------------] Denying WebSocket upgrade. No session found for cookie {}", reinterpret_cast<uint64_t>(res), cookie);
                     res->writeStatus("404 Not Found");
                     res->writeHeader("Content-Type", "text/plain")->end("404 Not Found\n");
                 }
@@ -576,7 +578,7 @@ void Server::Internal::worker_() {
             .open = [&](auto* ws) {
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
                 session.tls_ws = ws;
-                std::cout << "WebSocket connection for session " << session.id << " opend\n";
+                spdlog::info("[{:016x}] [{}] WebSocket connection opened", reinterpret_cast<uint64_t>(ws), session.id);
             },
             .message = [&](auto* ws, std::string_view message, uWS::OpCode op_code) {
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
@@ -595,12 +597,11 @@ void Server::Internal::worker_() {
                     std::cerr << "Error: Unknown opcoded received from client\n";
                 }
             },
-            .drain = [](auto* /*ws*/) {
+            .drain = [&](auto*) {
                 // Check ws->getBufferedAmount() here
             },
-            .ping = [&](auto* /*ws*/, std::string_view message) {
+            .ping = [&](auto* /*ws*/, std::string_view /*message*/) {
                 // You don't need to handle this one, we automatically respond to pings as per standard
-                std::cout << ": ws.ping(), message = " << message << std::endl;
             },
             //.pong = [&](uWS::WebSocket<TLS, SERVER, WsConData>* ws, std::string_view message) {
             .pong = [&](auto* ws, std::string_view message) {
@@ -617,7 +618,7 @@ void Server::Internal::worker_() {
             .close = [&](auto* ws, int code, std::string_view message) {
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
-                std::cout << "ws closed for session " << session.id << ". code = " << code << ", message = " << message << std::endl;
+                spdlog::info("[{:016x}] [{}] WebSocket closed. Code = {}, Message = '{}'", reinterpret_cast<uint64_t>(ws), session.id, code, message);
 
                 session.tls_ws = nullptr;
             }
@@ -689,13 +690,12 @@ void Server::Internal::worker_() {
                 if (tmp.find(':') != std::string::npos) tmp = "[" + addr + "]";
 
                 if (listen_socket) {
-                    std::cout << "Listening on https://" << tmp << ":" << port << " for server " << this << std::endl;
+                    spdlog::info("Listening on https://{}:{}", tmp, port);
                 } else {
-                    std::cerr << "Error: Unable to listen on https://" << tmp << ":" << port << " for server " << this << ". ";
                     if (tls_app->constructorFailed()) {
-                        std::cerr << "Invalid TLS configuration (cert/key/ca)\n";
+                        spdlog::error("Unable to listen on https://{}:{}. Invalid TLS configuration (cert/key/ca)", tmp, port);
                     } else {
-                        std::cerr << "Invalid or busy host/port\n";
+                        spdlog::error("Unable to listen on https://{}:{}. Invalid/busy host/port", tmp, port);
                     }
                 }
             });
