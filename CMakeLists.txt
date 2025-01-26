@@ -53,6 +53,10 @@ pkg_check_modules(FMT REQUIRED fmt)
 include_directories(${FMT_INCLUDE_DIRS})
 target_link_libraries(${CMAKE_PROJECT_NAME} ${FMT_LIBRARIES})
 
+pkg_check_modules(SPDLOG REQUIRED spdlog)
+include_directories(${SPDLOG_INCLUDE_DIRS})
+target_link_libraries(${CMAKE_PROJECT_NAME} ${SPDLOG_LIBRARIES})
+
 pkg_check_modules(LIBUV REQUIRED libuv)
 include_directories(${LIBUV_INCLUDE_DIRS})
 target_link_libraries(${CMAKE_PROJECT_NAME} ${LIBUV_LIBRARIES})
