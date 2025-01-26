@@ -108,6 +108,9 @@ private:
 Server::Internal::Internal(const Server::Settings& settings)
 : settings_(settings), running_(false), random_generator_(random_device_()),
   random_distribution_(std::numeric_limits<std::uint64_t>::min(), std::numeric_limits<std::uint64_t>::max()) {
+    // Init our frame counter
+    sample_buffer_[512] = 0;
+
     start();
 }
 
@@ -120,7 +123,6 @@ void Server::Internal::start() {
     if (!running_) {
         pipe(ctrl_pipe);
         running_ = true;
-        //lock.unlock();
         t_ = std::thread(&Internal::worker_, this);
     }
 }
@@ -130,7 +132,6 @@ void Server::Internal::stop() {
     if (running_) {
         running_ = false;
         write(ctrl_pipe[1], "Q", 1);
-        //lock.unlock();
         t_.join();
         close(ctrl_pipe[0]);
         close(ctrl_pipe[1]);
@@ -172,10 +173,10 @@ void Server::Internal::worker_() {
     if (ret < 0) std::cerr << "Error: Unable to initialize uv_poll, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
     ret = uv_poll_start(&ctrl_poll, UV_READABLE, [](uv_poll_t* p, int, int) {
-        auto  handle{reinterpret_cast<uv_handle_t*>(p)};
-        char  cmd{'X'};
-        int   ret;
-        int   fd;
+        auto handle = reinterpret_cast<uv_handle_t*>(p);
+        char cmd{'X'};
+        int  ret;
+        int  fd;
 
         uv_fileno(handle, &fd);
         ret = read(fd, &cmd, 1);
@@ -186,7 +187,6 @@ void Server::Internal::worker_() {
 
         switch (cmd) {
             case 'Q':
-                //std::cout << "Quit command received" << std::endl;
                 uv_stop(uv_handle_get_loop(handle));
                 break;
             default:
@@ -201,8 +201,8 @@ void Server::Internal::worker_() {
 
     // This is the idle timer for the server. Runs the function below every 5 seconds
     ret = uv_timer_start(&timer, [](uv_timer_t* t) {
-        auto  loop{uv_handle_get_loop(reinterpret_cast<uv_handle_t*>(t))};
-        auto& self{*reinterpret_cast<Internal*>(uv_loop_get_data(loop))};
+        auto  loop = uv_handle_get_loop(reinterpret_cast<uv_handle_t*>(t));
+        auto& self = *reinterpret_cast<Internal*>(uv_loop_get_data(loop));
 
         // Loop through all sessions and remove inactive ones. Send WebSockes
         // ping to active ones
@@ -239,9 +239,6 @@ void Server::Internal::worker_() {
     }, 0, 5000);
     if (ret < 0) std::cerr << "Error: Unable to start idle timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
-    // Init our frame counter
-    sample_buffer_[512] = 0;
-
     int        audio_pipe[2];
     uv_poll_t  audio_poll;
 
@@ -249,10 +246,10 @@ void Server::Internal::worker_() {
 
     uv_poll_init(&loop, &audio_poll, audio_pipe[0]);
     uv_poll_start(&audio_poll, UV_READABLE, [](uv_poll_t* p, int, int) {
-        auto  handle{reinterpret_cast<uv_handle_t*>(p)};
-        auto  loop{uv_handle_get_loop(handle)};
-        auto& self{*reinterpret_cast<Internal*>(uv_loop_get_data(loop))};
-        char  cmd{'X'};
+        auto  handle = reinterpret_cast<uv_handle_t*>(p);
+        auto  loop = uv_handle_get_loop(handle);
+        auto& self = *reinterpret_cast<Internal*>(uv_loop_get_data(loop));
+        char  cmd{};
         int   fd;
 
         uv_fileno(handle, &fd);
@@ -416,9 +413,7 @@ void Server::Internal::worker_() {
                 std::cout << "ws.message(), message = 0x";
                 auto it = message.begin();
                 while (it != message.end()) {
-#ifdef USE_FORMAT
                     std::cout << std::format("{:#04x}", *it);
-#endif
                     ++it;
                 }
                 std::cout << "\n";
@@ -441,13 +436,7 @@ void Server::Internal::worker_() {
             const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
 
             session.rtt = rtt.count() * 1000.0;
-#ifdef USE_FORMAT
             std::string rtt_str = std::format("{:.1f}", session.rtt);
-#else
-            char tmp[20];
-            sprintf(tmp, "%.1f", session.rtt);
-            std::string rtt_str = tmp;
-#endif
             std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
                          rtt_str << "ms, message = " << message << std::endl;
         },
@@ -596,9 +585,7 @@ void Server::Internal::worker_() {
                     std::cout << "ws.message(), message = 0x";
                     auto it = message.begin();
                     while (it != message.end()) {
-#ifdef USE_FORMAT
                         std::cout << std::format("{:#04x}", *it);
-#endif
                         ++it;
                     }
                     std::cout << "\n";
@@ -621,13 +608,7 @@ void Server::Internal::worker_() {
                 const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
 
                 session.rtt = rtt.count() * 1000.0;
-#ifdef USE_FORMAT
                 std::string rtt_str = std::format("{:.1f}", session.rtt);
-#else
-                char tmp[20];
-                sprintf(tmp, "%.1f", session.rtt);
-                std::string rtt_str = tmp;
-#endif
                 std::cout << "Received pong from client associated with session " << session.id << ". RTT = " <<
                             rtt_str << "ms, message = " << message << std::endl;
             },
