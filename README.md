@@ -15,13 +15,13 @@ git clone --recurse-submodules https://github.com/johanhedin/uwstest.git
 with:
 
 ```console
-sudo dnf install gcc-c++ cmake zlib-devel libuv-devel openssl-devel fmt-devel
+sudo dnf install gcc-c++ cmake zlib-devel libuv-devel openssl-devel fmt-devel spdlog-devel
 ```
 
 on Fedora/Rocky Linux 9/RHEL 9 and with:
 
 ```console
-sudo apt-get install g++ cmake zlib1g-dev libuv1-dev libssl-dev libfmt-dev
+sudo apt-get install g++ cmake zlib1g-dev libuv1-dev libssl-dev libfmt-dev libspdlog-dev
 ```
 
 on Debian(Bookworm)/Ubuntu(LTS 22.04 and LTS 24.04)/Raspberry Pi OS(Bookworm).
