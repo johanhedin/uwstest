@@ -15,7 +15,10 @@ include(GNUInstallDirs)
 
 # uSockets
 FILE(GLOB USOCKET_SRCS
-    "uWebSockets/uSockets/src/*.c"
+    "uWebSockets/uSockets/src/bsd.c"
+    "uWebSockets/uSockets/src/context.c"
+    "uWebSockets/uSockets/src/loop.c"
+    "uWebSockets/uSockets/src/socket.c"
     "uWebSockets/uSockets/src/eventing/libuv.c"
     "uWebSockets/uSockets/src/crypto/openssl.c"
     "uWebSockets/uSockets/src/crypto/sni_tree.cpp"
