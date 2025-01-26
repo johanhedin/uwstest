@@ -14,24 +14,26 @@ find_package(PkgConfig REQUIRED)
 include(GNUInstallDirs)
 
 # uSockets
-FILE(GLOB USOCKET_SRCS "uWebSockets/uSockets/src/*.c"
-                       "uWebSockets/uSockets/src/eventing/libuv.c"
-                       "uWebSockets/uSockets/src/crypto/openssl.c"
-                       "uWebSockets/uSockets/src/crypto/sni_tree.cpp"
+FILE(GLOB USOCKET_SRCS
+    "uWebSockets/uSockets/src/*.c"
+    "uWebSockets/uSockets/src/eventing/libuv.c"
+    "uWebSockets/uSockets/src/crypto/openssl.c"
+    "uWebSockets/uSockets/src/crypto/sni_tree.cpp"
 )
 add_library(usockets ${USOCKET_SRCS})
-#target_compile_options(usockets PRIVATE "-Wno-unused-parameter")
-#target_compile_options(usockets PRIVATE "-Wno-sign-compare")
-#target_compile_options(usockets PRIVATE "-Wno-use-after-free")
-target_compile_options(usockets PRIVATE "-Wno-deprecated-declarations")
-target_compile_options(usockets PRIVATE "-DLIBUS_USE_OPENSSL")
-target_compile_options(usockets PRIVATE "-DLIBUS_USE_LIBUV")
+target_compile_options(usockets PRIVATE -Wno-deprecated-declarations)
+target_compile_options(usockets PRIVATE -DLIBUS_USE_OPENSSL)
+target_compile_options(usockets PRIVATE -DLIBUS_USE_LIBUV)
 
 target_include_directories(usockets PRIVATE ${PROJECT_SOURCE_DIR}/uWebSockets/uSockets/src)
 
 
 # Main program
-add_executable(${CMAKE_PROJECT_NAME} src/main.cpp src/server.cpp)
+FILE(GLOB SRCS
+    "src/server.cpp"
+    "src/main.cpp"
+)
+add_executable(${CMAKE_PROJECT_NAME} ${SRCS})
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wall)
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wextra)
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -pedantic)
