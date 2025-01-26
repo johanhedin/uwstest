@@ -239,6 +239,7 @@ void Server::Internal::worker_() {
     }, 0, 5000);
     if (ret < 0) std::cerr << "Error: Unable to start maintenance timer, ret = " << ret << "(" << uv_strerror(ret) << ")\n";
 
+    // Create a poll and timer to create a function that is calles every 32ms
     int        audio_pipe[2];
     uv_poll_t  audio_poll;
 
@@ -258,7 +259,7 @@ void Server::Internal::worker_() {
         self.send_audio_();
     });
 
-    // Pacer in it's own thread
+    // Pacer in it's own thread to get accurate 32ms wakeups
     auto t = std::thread([&]() {
         using namespace std::chrono_literals;
 
