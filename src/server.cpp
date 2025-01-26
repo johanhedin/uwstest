@@ -811,11 +811,11 @@ void Server::Internal::send_audio_(void) {
         }
         if (session.tls_ws) {
             if (session.buff_depth_updated && session.client_buffer_depth > 12) {
-                spdlog::warn("[{:016x}] [{}] Skipping audio frame to client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
+                spdlog::warn("[{:016x}] [{}] Skipping audio frame to client", reinterpret_cast<uint64_t>(session.tls_ws), session.id);
             } else {
                 auto status = session.tls_ws->send(data, uWS::OpCode::BINARY);
                 if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
-                    spdlog::error("[{:016x}] [{}] Failed to send audio data to WebSocket client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
+                    spdlog::error("[{:016x}] [{}] Failed to send audio data to WebSocket client", reinterpret_cast<uint64_t>(session.tls_ws), session.id);
                 }
             }
             session.buff_depth_updated = false;
