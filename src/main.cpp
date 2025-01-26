@@ -25,7 +25,7 @@ static void signal_handler(int signal) { signal_callback(signal); }
 
 
 int main(int argc, char** argv) {
-    spdlog::info("Hello µWSTest!");
+    spdlog::info("Starting µWSTest");
 
     // Signal handling. We use a mutex protected deque to "send" caught signals
     // to the main thread (see further down). SIGINT/SIGTERM have priority.
