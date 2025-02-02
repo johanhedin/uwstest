@@ -62,14 +62,14 @@ private:
     };
 
     struct Session {
-        std::string                                        id{};
-        std::chrono::steady_clock::time_point              last_activity{};
-        std::chrono::steady_clock::time_point              ws_ping_sent{};
-        uWS::WebSocket<STD, SERVER, WsConData>*            std_ws{nullptr};
-        uWS::WebSocket<TLS, SERVER, WsConData>*            tls_ws{nullptr};
-        double                                             rtt{0.0};
-        int                                                client_buffer_depth{0};
-        bool                                               buff_depth_updated{false};
+        std::string                             id{};
+        std::chrono::steady_clock::time_point   last_activity{};
+        std::chrono::steady_clock::time_point   ws_ping_sent{};
+        uWS::WebSocket<STD, SERVER, WsConData>* std_ws{nullptr};
+        uWS::WebSocket<TLS, SERVER, WsConData>* tls_ws{nullptr};
+        double                                  rtt{0.0};
+        int                                     client_buffer_depth{0};
+        bool                                    buff_depth_updated{false};
     };
 
     Server::Settings               settings_;
@@ -83,8 +83,8 @@ private:
     int                            sample_idx_{0};
     std::map<std::string, Session> sessions;
 
-    std::random_device             random_device_;
-    std::mt19937                   random_generator_;
+    std::random_device                      random_device_;
+    std::mt19937                            random_generator_;
     std::uniform_int_distribution<uint64_t> random_distribution_;
 
     std::string read_file(const std::string& path) {
