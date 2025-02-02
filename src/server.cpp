@@ -58,7 +58,14 @@ private:
 
     class Session;
     struct WsConData {
+        uint64_t connection_id;
         Session* session;
+    };
+
+    struct Connection {
+        std::string client_addr{};
+        int         client_port{};
+        std::string session_id{};
     };
 
     struct Session {
@@ -81,6 +88,7 @@ private:
     std::unique_ptr<uWS::SSLApp>   tls_app_;
     short                          sample_buffer_[513]; // Last word is a counter
     int                            sample_idx_{0};
+    std::map<uint64_t, Connection> connections_;
     std::map<std::string, Session> sessions_;
 
     std::random_device                      random_device_;
@@ -119,6 +127,8 @@ Server::Internal::Internal(const Server::Settings& settings)
 
 Server::Internal::~Internal() {
     stop();
+    assert(connections_.size() == 0);
+    assert(sessions_.size() == 0);
 }
 
 void Server::Internal::start() {
@@ -285,22 +295,28 @@ void Server::Internal::worker_() {
 
     std_app_ = std::move(std::make_unique<uWS::App>());
     std_app_->filter([&](auto* res, int con) {
+        uint64_t connection_id = reinterpret_cast<uint64_t>(res);
         if (con == 1) {
             std::string remote_addr{res->getRemoteAddressAsText()};
             int         remote_port{us_socket_remote_port(0, reinterpret_cast<us_socket_t*>(res))};
-            spdlog::info("[{:016x}] [----------------] Incoming http connection from {}:{}", reinterpret_cast<uint64_t>(res), remote_addr, remote_port);
+            Connection connection{ .client_addr{remote_addr}, .client_port{remote_port}, .session_id{"----------------"} };
+            connections_[connection_id] = connection;
+            spdlog::info("[{:016x}] [----------------] Connection established for http client {}:{}", connection_id, remote_addr, remote_port);
             // If we like to have ban on IP-addresses, we could just do res->close() here
             // to reset the incoming connection
         } else if (con == -1) {
-            spdlog::info("[{:016x}] [????????????????] Client disconnected from server", reinterpret_cast<uint64_t>(res));
+            Connection connection = connections_[connection_id];
+            spdlog::info("[{:016x}] [{}] Connection closed for http client {}:{}", connection_id, connection.session_id, connection.client_addr, connection.client_port);
+            connections_.erase(connection_id);
         }
     }).any("/*", [&](auto* res, auto* req) {
         // Catch all with 404
         std::string method{req->getCaseSensitiveMethod()};
         std::string url{req->getUrl()};
         std::string query{req->getQuery()};
+        Connection connection = connections_[reinterpret_cast<uint64_t>(res)];
 
-        spdlog::warn("[{:016x}] [????????????????] Denying Request {} {}{}", reinterpret_cast<uint64_t>(res), method, url, (query.empty() ? "":query));
+        spdlog::warn("[{:016x}] [{}] Denying Request {} {}{}", reinterpret_cast<uint64_t>(res), connection.session_id, method, url, (query.empty() ? "":query));
 
         res->writeStatus("404 Not Found");
         res->writeHeader("Content-Type", "text/plain")->end("404 Not Found\n");
@@ -329,6 +345,7 @@ void Server::Internal::worker_() {
             session_map->second.last_activity = now;
             id = session_map->first;
         }
+        connections_[reinterpret_cast<uint64_t>(res)].session_id = id;
 
         spdlog::info("[{:016x}] [{}] GET {}", reinterpret_cast<uint64_t>(res), id, url);
 
@@ -384,9 +401,10 @@ void Server::Internal::worker_() {
 
             auto session_pair = sessions_.find(cookie);
             if (session_pair != sessions_.end()) {
+                connections_[reinterpret_cast<uint64_t>(res)].session_id = cookie;
                 spdlog::info("[{:016x}] [{}] Accepting WebSocket upgrade", reinterpret_cast<uint64_t>(res), session_pair->first);
                 res->template upgrade<WsConData>(
-                    { .session = &session_pair->second },
+                    { .connection_id = reinterpret_cast<uint64_t>(res), .session = &session_pair->second },
                     req->getHeader("sec-websocket-key"),
                     req->getHeader("sec-websocket-protocol"),
                     req->getHeader("sec-websocket-extensions"),
@@ -399,15 +417,17 @@ void Server::Internal::worker_() {
             }
         },
         .open = [&](auto* ws) {
+            uint64_t connection_id = (reinterpret_cast<WsConData*>(ws->getUserData()))->connection_id;
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
             session.std_ws = ws;
-            spdlog::info("[{:016x}] [{}] WebSocket connection opened", reinterpret_cast<uint64_t>(ws), session.id);
+            spdlog::info("[{:016x}] [{}] Connection upgraded to WebSocket", connection_id, session.id);
         },
         .message = [&](auto* ws, std::string_view message, uWS::OpCode op_code) {
+            uint64_t connection_id = (reinterpret_cast<WsConData*>(ws->getUserData()))->connection_id;
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
             if (op_code == uWS::OpCode::TEXT) {
-                spdlog::info("[{:016x}] [{}] Message from client: {}", reinterpret_cast<uint64_t>(ws), session.id, message);
+                spdlog::info("[{:016x}] [{}] Message from client: {}", connection_id, session.id, message);
             } else if (op_code == uWS::OpCode::BINARY) {
                 if (message.size() > 0) {
                     auto msg = message[0];
@@ -417,11 +437,11 @@ void Server::Internal::worker_() {
                                 session.client_buffer_depth = message[1];
                                 session.buff_depth_updated = true;
                             } else {
-                                spdlog::error("[{:016x}] [{}] Invalid length for message type 0x01", reinterpret_cast<uint64_t>(ws), session.id);
+                                spdlog::error("[{:016x}] [{}] Invalid length for message type 0x01", connection_id, session.id);
                             }
                             break;
                         default:
-                            spdlog::error("[{:016x}] [{}] Unknown message type ({}) received from WebSocket client", reinterpret_cast<uint64_t>(ws), session.id, msg);
+                            spdlog::error("[{:016x}] [{}] Unknown message type ({}) received from WebSocket client", connection_id, session.id, msg);
                             std::cerr << "message = 0x";
                             auto it = message.begin();
                             while (it != message.end()) {
@@ -431,7 +451,7 @@ void Server::Internal::worker_() {
                             std::cerr << std::endl;
                     }
                 } else {
-                    spdlog::error("[{:016x}] [{}] Empty PDU received from WebSocket client", reinterpret_cast<uint64_t>(ws), session.id);
+                    spdlog::error("[{:016x}] [{}] Empty PDU received from WebSocket client", connection_id, session.id);
                 }
             } else {
                 std::cerr << "Error: Unknown opcoded received from client\n";
@@ -445,19 +465,24 @@ void Server::Internal::worker_() {
         },
         //.pong = [&](uWS::WebSocket<STD, SERVER, WsConData>* ws, std::string_view message) {
         .pong = [&](auto* ws, std::string_view) {
+            uint64_t connection_id = (reinterpret_cast<WsConData*>(ws->getUserData()))->connection_id;
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
             std::chrono::duration<double> rtt = std::chrono::steady_clock::now() - session.ws_ping_sent;
             session.rtt = rtt.count() * 1000.0;
 
-            spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", reinterpret_cast<uint64_t>(ws), session.id, session.rtt, session.client_buffer_depth);
+            spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", connection_id, session.id, session.rtt, session.client_buffer_depth);
         },
         .close = [&](auto* ws, int code, std::string_view message) {
+            uint64_t connection_id = (reinterpret_cast<WsConData*>(ws->getUserData()))->connection_id;
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+            Connection connection = connections_[connection_id];
 
-            spdlog::info("[{:016x}] [{}] WebSocket connection closed. Code = {}, Message = '{}'", reinterpret_cast<uint64_t>(ws), session.id, code, message);
+            spdlog::info("[{:016x}] [{}] Connection closed for http client {}:{} (code = {}, message = '{}')", connection_id, connection.session_id,
+                         connection.client_addr, connection.client_port, code, message);
 
             session.std_ws = nullptr;
+            connections_.erase(connection_id);
         }
     });
 
@@ -484,20 +509,26 @@ void Server::Internal::worker_() {
 
         tls_app_ = std::move(std::make_unique<uWS::SSLApp>(tls_options));
         tls_app_->filter([&](auto* res, int con) {
+            uint64_t connection_id = reinterpret_cast<uint64_t>(res);
             if (con == 1) {
                 std::string remote_addr{res->getRemoteAddressAsText()};
                 int         remote_port{us_socket_remote_port(1, reinterpret_cast<us_socket_t*>(res))};
-                spdlog::info("[{:016x}] [----------------] Incoming https connection from {}:{}", reinterpret_cast<uint64_t>(res), remote_addr, remote_port);
+                Connection connection{ .client_addr{remote_addr}, .client_port{remote_port}, .session_id{"----------------"} };
+                connections_[connection_id] = connection;
+                spdlog::info("[{:016x}] [----------------] Connection established for https client {}:{}", connection_id, remote_addr, remote_port);
             } else if (con == -1) {
-                spdlog::info("[{:016x}] [????????????????] Client disconnected from server", reinterpret_cast<uint64_t>(res));
+                Connection connection = connections_[connection_id];
+                spdlog::info("[{:016x}] [{}] Connection closed for https client {}:{}", connection_id, connection.session_id, connection.client_addr, connection.client_port);
+                connections_.erase(connection_id);
             }
         }).any("/*", [&](auto* res, auto* req) {
             // Catch all with 404
             std::string method{req->getCaseSensitiveMethod()};
             std::string url{req->getUrl()};
             std::string query{req->getQuery()};
+            Connection connection = connections_[reinterpret_cast<uint64_t>(res)];
 
-            spdlog::warn("[{:016x}] [????????????????] Denying Request {} {}{}", reinterpret_cast<uint64_t>(res), method, url, (query.empty() ? "":query));
+            spdlog::warn("[{:016x}] [{}] Denying Request {} {}{}", reinterpret_cast<uint64_t>(res), connection.session_id, method, url, (query.empty() ? "":query));
 
             res->writeStatus("404 Not Found");
             res->writeHeader("Content-Type", "text/plain")->end("404 Not Found\n");
@@ -526,6 +557,7 @@ void Server::Internal::worker_() {
                 session_map->second.last_activity = now;
                 id = session_map->first;
             }
+            connections_[reinterpret_cast<uint64_t>(res)].session_id = id;
 
             spdlog::info("[{:016x}] [{}] GET {}", reinterpret_cast<uint64_t>(res), id, url);
 
@@ -569,9 +601,10 @@ void Server::Internal::worker_() {
 
                 auto session_pair = sessions_.find(cookie);
                 if (session_pair != sessions_.end()) {
+                    connections_[reinterpret_cast<uint64_t>(res)].session_id = cookie;
                     spdlog::info("[{:016x}] [{}] Accepting WebSocket upgrade", reinterpret_cast<uint64_t>(res), session_pair->first);
                     res->template upgrade<WsConData>(
-                        { .session = &session_pair->second },
+                        { .connection_id = reinterpret_cast<uint64_t>(res), .session = &session_pair->second },
                         req->getHeader("sec-websocket-key"),
                         req->getHeader("sec-websocket-protocol"),
                         req->getHeader("sec-websocket-extensions"),
@@ -584,43 +617,45 @@ void Server::Internal::worker_() {
                 }
             },
             .open = [&](auto* ws) {
+                uint64_t connection_id = (reinterpret_cast<WsConData*>(ws->getUserData()))->connection_id;
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
                 session.tls_ws = ws;
-                spdlog::info("[{:016x}] [{}] WebSocket connection opened", reinterpret_cast<uint64_t>(ws), session.id);
+                spdlog::info("[{:016x}] [{}] Connection upgraded to WebSocket", connection_id, session.id);
             },
             .message = [&](auto* ws, std::string_view message, uWS::OpCode op_code) {
-            Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+                uint64_t connection_id = (reinterpret_cast<WsConData*>(ws->getUserData()))->connection_id;
+                Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
-            if (op_code == uWS::OpCode::TEXT) {
-                spdlog::info("[{:016x}] [{}] Message from client: {}", reinterpret_cast<uint64_t>(ws), session.id, message);
-            } else if (op_code == uWS::OpCode::BINARY) {
-                if (message.size() > 0) {
-                    auto msg = message[0];
-                    switch (msg) {
-                        case 0x01:
-                            if (message.size() == 2) {
-                                session.client_buffer_depth = message[1];
-                                session.buff_depth_updated = true;
-                            } else {
-                                spdlog::error("[{:016x}] [{}] Invalid length for message type 0x01", reinterpret_cast<uint64_t>(ws), session.id);
-                            }
-                            break;
-                        default:
-                            spdlog::error("[{:016x}] [{}] Unknown message type ({}) received from WebSocket client", reinterpret_cast<uint64_t>(ws), session.id, msg);
-                            std::cerr << "message = 0x";
-                            auto it = message.begin();
-                            while (it != message.end()) {
-                                std::cout << std::format("{:02x}", *it);
-                                ++it;
-                            }
-                            std::cerr << std::endl;
+                if (op_code == uWS::OpCode::TEXT) {
+                    spdlog::info("[{:016x}] [{}] Message from client: {}", connection_id, session.id, message);
+                } else if (op_code == uWS::OpCode::BINARY) {
+                    if (message.size() > 0) {
+                        auto msg = message[0];
+                        switch (msg) {
+                            case 0x01:
+                                if (message.size() == 2) {
+                                    session.client_buffer_depth = message[1];
+                                    session.buff_depth_updated = true;
+                                } else {
+                                    spdlog::error("[{:016x}] [{}] Invalid length for message type 0x01", connection_id, session.id);
+                                }
+                                break;
+                            default:
+                                spdlog::error("[{:016x}] [{}] Unknown message type ({}) received from WebSocket client", connection_id, session.id, msg);
+                                std::cerr << "message = 0x";
+                                auto it = message.begin();
+                                while (it != message.end()) {
+                                    std::cout << std::format("{:02x}", *it);
+                                    ++it;
+                                }
+                                std::cerr << std::endl;
+                        }
+                    } else {
+                        spdlog::error("[{:016x}] [{}] Empty PDU received from WebSocket client", connection_id, session.id);
                     }
                 } else {
-                    spdlog::error("[{:016x}] [{}] Empty PDU received from WebSocket client", reinterpret_cast<uint64_t>(ws), session.id);
+                    std::cerr << "Error: Unknown opcoded received from client\n";
                 }
-            } else {
-                std::cerr << "Error: Unknown opcoded received from client\n";
-            }
             },
             .drain = [&](auto*) {
                 // Check ws->getBufferedAmount() here
@@ -630,19 +665,24 @@ void Server::Internal::worker_() {
             },
             //.pong = [&](uWS::WebSocket<TLS, SERVER, WsConData>* ws, std::string_view message) {
             .pong = [&](auto* ws, std::string_view) {
+                uint64_t connection_id = (reinterpret_cast<WsConData*>(ws->getUserData()))->connection_id;
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
                 std::chrono::duration<double> rtt = std::chrono::steady_clock::now() - session.ws_ping_sent;
                 session.rtt = rtt.count() * 1000.0;
 
-                spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", reinterpret_cast<uint64_t>(ws), session.id, session.rtt, session.client_buffer_depth);
+                spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", connection_id, session.id, session.rtt, session.client_buffer_depth);
             },
             .close = [&](auto* ws, int code, std::string_view message) {
+                uint64_t connection_id = (reinterpret_cast<WsConData*>(ws->getUserData()))->connection_id;
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
+                Connection connection = connections_[connection_id];
 
-                spdlog::info("[{:016x}] [{}] WebSocket connection closed. Code = {}, Message = '{}'", reinterpret_cast<uint64_t>(ws), session.id, code, message);
+                spdlog::info("[{:016x}] [{}] Connection closed for https client {}:{} (code = {}, message = '{}')", connection_id, connection.session_id,
+                            connection.client_addr, connection.client_port, code, message);
 
                 session.tls_ws = nullptr;
+                connections_.erase(connection_id);
             }
         });
 
@@ -746,6 +786,16 @@ void Server::Internal::worker_() {
 
     // Detach the uWS Loop from our uv_loop
     uWS::Loop::get()->free();
+
+    // Remove any active sessions since we shutting down
+    auto session_pair = sessions_.begin();
+    while (session_pair != sessions_.end()) {
+        auto& session = session_pair->second;
+        assert(session.std_ws == nullptr);
+        assert(session.tls_ws == nullptr);
+        spdlog::info("[----------------] [{}] Removing session", session.id);
+        session_pair = sessions_.erase(session_pair);
+    }
 
     // Stop and cleanup the audio sequencer
     t.join();
