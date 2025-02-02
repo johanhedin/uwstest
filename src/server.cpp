@@ -161,19 +161,41 @@ void Server::Internal::restart(const Server::Settings& new_settings) {
 }
 
 void Server::Internal::worker_() {
-    int       ret;
-    uv_loop_t loop;
+    int         ret;
+    std::string std_sockets_str{};
+    std::string tls_sockets_str{};
+
+    for (auto& socket : settings_.std_sockets) {
+        if (!std_sockets_str.empty()) std_sockets_str += ", ";
+
+        auto addr{socket.first};
+        auto port{std::to_string(socket.second)};
+        if (addr.find(':') != std::string::npos) addr = "[" + addr + "]";
+
+        std_sockets_str += addr + ":" + port;
+    }
+
+    for (auto& socket : settings_.tls_sockets) {
+        if (!tls_sockets_str.empty()) tls_sockets_str += ", ";
+
+        auto addr{socket.first};
+        auto port{std::to_string(socket.second)};
+        if (addr.find(':') != std::string::npos) addr = "[" + addr + "]";
+
+        tls_sockets_str += addr + ":" + port;
+    }
 
     spdlog::info("Server worker started");
     spdlog::info("Settings:");
-    std::cout << "    std_sockets="; for (auto& s : settings_.std_sockets) { std::cout << s.first << ":" << s.second << " "; }; std::cout << std::endl;
-    std::cout << "    tls_sockets="; for (auto& s : settings_.tls_sockets) { std::cout << s.first << ":" << s.second << " "; }; std::cout << std::endl;
-    std::cout << "    crt_file=" << settings_.crt_file << std::endl;
-    std::cout << "    key_file=" << settings_.key_file << std::endl;
-    std::cout << "    client_ca_file=" << settings_.client_ca_file << std::endl;
-    std::cout << "    auth_hostname=" << settings_.auth_hostname << std::endl;
-    std::cout << "    webroot=" << settings_.webroot << std::endl;
+    spdlog::info("    std_sockets = {}", std_sockets_str);
+    spdlog::info("    tls_sockets = {}", tls_sockets_str);
+    spdlog::info("    key_file = {}", settings_.key_file);
+    spdlog::info("    crt_file = {}", settings_.crt_file);
+    spdlog::info("    client_ca_file = {}", settings_.client_ca_file);
+    spdlog::info("    auth_hostname = {}", settings_.auth_hostname);
+    spdlog::info("    webroot = {}", settings_.webroot);
 
+    uv_loop_t loop;
     ret = uv_loop_init(&loop);
     if (ret < 0) spdlog::error("Unable to create uv_loop, ret = {} ({})", ret, uv_strerror(ret));
 
@@ -298,6 +320,7 @@ void Server::Internal::worker_() {
         uint64_t connection_id = reinterpret_cast<uint64_t>(res);
         if (con == 1) {
             std::string remote_addr{res->getRemoteAddressAsText()};
+            if (remote_addr.find(':') != std::string::npos) remote_addr = "[" + remote_addr + "]";
             int         remote_port{us_socket_remote_port(0, reinterpret_cast<us_socket_t*>(res))};
             Connection connection{ .client_addr{remote_addr}, .client_port{remote_port}, .session_id{"----------------"} };
             connections_[connection_id] = connection;
@@ -512,6 +535,7 @@ void Server::Internal::worker_() {
             uint64_t connection_id = reinterpret_cast<uint64_t>(res);
             if (con == 1) {
                 std::string remote_addr{res->getRemoteAddressAsText()};
+                if (remote_addr.find(':') != std::string::npos) remote_addr = "[" + remote_addr + "]";
                 int         remote_port{us_socket_remote_port(1, reinterpret_cast<us_socket_t*>(res))};
                 Connection connection{ .client_addr{remote_addr}, .client_port{remote_port}, .session_id{"----------------"} };
                 connections_[connection_id] = connection;
@@ -749,7 +773,7 @@ void Server::Internal::worker_() {
             int         port{socket.second};
             tls_app_->listen(addr, port, LIBUS_LISTEN_EXCLUSIVE_PORT, [this, addr, port](auto* listen_socket) {
                 std::string tmp{addr};
-                if (tmp.find(':') != std::string::npos) tmp = "[" + addr + "]";
+                if (addr.find(':') != std::string::npos) tmp = "[" + addr + "]";
 
                 if (listen_socket) {
                     spdlog::info("Listening on https://{}:{}", tmp, port);
