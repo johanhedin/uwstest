@@ -86,6 +86,7 @@ int main(int argc, char** argv) {
             switch (signal) {
                 case SIGTERM:
                 case SIGINT:
+                    spdlog::info("Stop requested. Shutting down server...");
                     run = false;
                     break;
                 case SIGHUP:
