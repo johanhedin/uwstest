@@ -227,7 +227,6 @@ void Server::Internal::worker_() {
                 if (status != std::remove_pointer<decltype(session.std_ws)>::type::SUCCESS) {
                     spdlog::error("[{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.std_ws), session.id);
                 }
-                spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", reinterpret_cast<uint64_t>(session.std_ws), session.id, session.rtt, session.client_buffer_depth);
             }
 
             if (session.tls_ws) {
@@ -236,7 +235,6 @@ void Server::Internal::worker_() {
                 if (status != std::remove_pointer<decltype(session.tls_ws)>::type::SUCCESS) {
                     spdlog::error("[{:016x}] [{}] Unable to send websocket ping to client", reinterpret_cast<uint64_t>(session.tls_ws), session.id);
                 }
-                spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", reinterpret_cast<uint64_t>(session.tls_ws), session.id, session.rtt, session.client_buffer_depth);
             }
 
             ++session_pair;
@@ -447,13 +445,12 @@ void Server::Internal::worker_() {
         },
         //.pong = [&](uWS::WebSocket<STD, SERVER, WsConData>* ws, std::string_view message) {
         .pong = [&](auto* ws, std::string_view) {
-            const auto now = std::chrono::steady_clock::now();
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
-            const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
+            std::chrono::duration<double> rtt = std::chrono::steady_clock::now() - session.ws_ping_sent;
             session.rtt = rtt.count() * 1000.0;
 
-            //spdlog::info("[{:016x}] [{}] WebSocket ping response from client. RTT = {:.1f}ms", reinterpret_cast<uint64_t>(ws), session.id, session.rtt);
+            spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", reinterpret_cast<uint64_t>(ws), session.id, session.rtt, session.client_buffer_depth);
         },
         .close = [&](auto* ws, int code, std::string_view message) {
             Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
@@ -633,13 +630,12 @@ void Server::Internal::worker_() {
             },
             //.pong = [&](uWS::WebSocket<TLS, SERVER, WsConData>* ws, std::string_view message) {
             .pong = [&](auto* ws, std::string_view) {
-                const auto now = std::chrono::steady_clock::now();
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
 
-                const std::chrono::duration<double> rtt = now - session.ws_ping_sent;
+                std::chrono::duration<double> rtt = std::chrono::steady_clock::now() - session.ws_ping_sent;
                 session.rtt = rtt.count() * 1000.0;
 
-                //spdlog::info("[{:016x}] [{}] WebSocket ping response from client. RTT = {:.1f}ms", reinterpret_cast<uint64_t>(ws), session.id, session.rtt);
+                spdlog::info("[{:016x}] [{}] rtt = {:.1f}ms, client_buffer_depth = {}", reinterpret_cast<uint64_t>(ws), session.id, session.rtt, session.client_buffer_depth);
             },
             .close = [&](auto* ws, int code, std::string_view message) {
                 Session& session = *((reinterpret_cast<WsConData*>(ws->getUserData()))->session);
