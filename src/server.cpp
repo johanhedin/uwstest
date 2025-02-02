@@ -76,12 +76,12 @@ private:
     bool                           running_;
     std::mutex                     m_;
     std::thread                    t_;
-    int                            ctrl_pipe[2];
-    std::unique_ptr<uWS::App>      std_app;
-    std::unique_ptr<uWS::SSLApp>   tls_app;
+    int                            ctrl_pipe_[2];
+    std::unique_ptr<uWS::App>      std_app_;
+    std::unique_ptr<uWS::SSLApp>   tls_app_;
     short                          sample_buffer_[513]; // Last word is a counter
     int                            sample_idx_{0};
-    std::map<std::string, Session> sessions;
+    std::map<std::string, Session> sessions_;
 
     std::random_device                      random_device_;
     std::mt19937                            random_generator_;
@@ -124,7 +124,7 @@ Server::Internal::~Internal() {
 void Server::Internal::start() {
     std::unique_lock<std::mutex> lock{m_};
     if (!running_) {
-        pipe(ctrl_pipe);
+        pipe(ctrl_pipe_);
         running_ = true;
         t_ = std::thread(&Internal::worker_, this);
     }
@@ -134,10 +134,10 @@ void Server::Internal::stop() {
     std::unique_lock<std::mutex> lock{m_};
     if (running_) {
         running_ = false;
-        write(ctrl_pipe[1], "Q", 1);
+        write(ctrl_pipe_[1], "Q", 1);
         t_.join();
-        close(ctrl_pipe[0]);
-        close(ctrl_pipe[1]);
+        close(ctrl_pipe_[0]);
+        close(ctrl_pipe_[1]);
     }
 }
 
@@ -172,7 +172,7 @@ void Server::Internal::worker_() {
 
     // Create a uv_poll to watch on the quit pipe
     uv_poll_t ctrl_poll;
-    ret = uv_poll_init(&loop, &ctrl_poll, ctrl_pipe[0]);
+    ret = uv_poll_init(&loop, &ctrl_poll, ctrl_pipe_[0]);
     if (ret < 0) spdlog::error("Unable to initialize ctrl_poll, ret = {} ({})", ret, uv_strerror(ret));
 
     ret = uv_poll_start(&ctrl_poll, UV_READABLE, [](uv_poll_t* p, int, int) {
@@ -209,15 +209,15 @@ void Server::Internal::worker_() {
         auto& self = *reinterpret_cast<Internal*>(uv_loop_get_data(loop));
 
         // Loop through all sessions and remove inactive ones. Send WebSockes ping to active ones
-        auto session_pair = self.sessions.begin();
-        while (session_pair != self.sessions.end()) {
+        auto session_pair = self.sessions_.begin();
+        while (session_pair != self.sessions_.end()) {
             using namespace std::chrono_literals;
             auto& session = session_pair->second;
 
             auto session_age = std::chrono::steady_clock::now() - session.last_activity;
             if (!session.std_ws && !session.tls_ws && session_age > 30s) {
                 spdlog::info("[----------------] [{}] Removing inactive session", session.id);
-                session_pair = self.sessions.erase(session_pair);
+                session_pair = self.sessions_.erase(session_pair);
                 continue;
             }
 
@@ -283,8 +283,8 @@ void Server::Internal::worker_() {
     // Do not send server name on HTTP Response
     uWS::Loop::get()->setSilent(true);
 
-    std_app = std::move(std::make_unique<uWS::App>());
-    std_app->filter([&](auto* res, int con) {
+    std_app_ = std::move(std::make_unique<uWS::App>());
+    std_app_->filter([&](auto* res, int con) {
         if (con == 1) {
             std::string remote_addr{res->getRemoteAddressAsText()};
             int         remote_port{us_socket_remote_port(0, reinterpret_cast<us_socket_t*>(res))};
@@ -315,11 +315,11 @@ void Server::Internal::worker_() {
         auto now = std::chrono::steady_clock::now();
 
         std::string id{"----------------"};
-        auto session_map = sessions.find(cookie);
-        if (session_map == sessions.end()) {
-            if (sessions.size() < 10) {
+        auto session_map = sessions_.find(cookie);
+        if (session_map == sessions_.end()) {
+            if (sessions_.size() < 10) {
                 id = get_session_id();
-                sessions[id] = Session({ .id = id, .last_activity = now });
+                sessions_[id] = Session({ .id = id, .last_activity = now });
                 res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
                 spdlog::info("[{:016x}] [{}] Incoming Request. New session created", reinterpret_cast<uint64_t>(res), id);
             } else {
@@ -371,7 +371,7 @@ void Server::Internal::worker_() {
         res->writeHeader("Content-Type", "application/json")->end("{ \"success\": true }\n");
     });
 
-    std_app->ws<WsConData>("/ws", {
+    std_app_->ws<WsConData>("/ws", {
         // Settings
         .compression = uWS::SHARED_COMPRESSOR,
         .maxPayloadLength = 16 * 1024,
@@ -382,8 +382,8 @@ void Server::Internal::worker_() {
         .upgrade = [&](auto* res, auto* req, auto* context) {
             std::string cookie{req->getHeader("cookie")};
 
-            auto session_pair = sessions.find(cookie);
-            if (session_pair != sessions.end()) {
+            auto session_pair = sessions_.find(cookie);
+            if (session_pair != sessions_.end()) {
                 spdlog::info("[{:016x}] [{}] Accepting WebSocket upgrade", reinterpret_cast<uint64_t>(res), session_pair->first);
                 res->template upgrade<WsConData>(
                     { .session = &session_pair->second },
@@ -464,7 +464,7 @@ void Server::Internal::worker_() {
     for (auto &socket : settings_.std_sockets) {
         std::string addr{socket.first};
         int         port{socket.second};
-        std_app->listen(addr, port, LIBUS_LISTEN_EXCLUSIVE_PORT, [this, addr, port](auto* listen_socket) {
+        std_app_->listen(addr, port, LIBUS_LISTEN_EXCLUSIVE_PORT, [this, addr, port](auto* listen_socket) {
             std::string tmp{addr};
             if (tmp.find(':') != std::string::npos) tmp = "[" + addr + "]";
 
@@ -482,8 +482,8 @@ void Server::Internal::worker_() {
             .cert_file_name = settings_.crt_file.c_str()
         };
 
-        tls_app = std::move(std::make_unique<uWS::SSLApp>(tls_options));
-        tls_app->filter([&](auto* res, int con) {
+        tls_app_ = std::move(std::make_unique<uWS::SSLApp>(tls_options));
+        tls_app_->filter([&](auto* res, int con) {
             if (con == 1) {
                 std::string remote_addr{res->getRemoteAddressAsText()};
                 int         remote_port{us_socket_remote_port(1, reinterpret_cast<us_socket_t*>(res))};
@@ -512,11 +512,11 @@ void Server::Internal::worker_() {
             auto now = std::chrono::steady_clock::now();
 
             std::string id{"----------------"};
-            auto session_map = sessions.find(cookie);
-            if (session_map == sessions.end()) {
-                if (sessions.size() < 10) {
+            auto session_map = sessions_.find(cookie);
+            if (session_map == sessions_.end()) {
+                if (sessions_.size() < 10) {
                     id = get_session_id();
-                    sessions[id] = Session({ .id = id, .last_activity = now });
+                    sessions_[id] = Session({ .id = id, .last_activity = now });
                     res->writeHeader("Set-Cookie", id + "; SameSite=Strict");
                     spdlog::info("[{:016x}] [{}] Incoming Request. New session created", reinterpret_cast<uint64_t>(res), id);
                 } else {
@@ -556,7 +556,7 @@ void Server::Internal::worker_() {
             }
         });
 
-        tls_app->ws<WsConData>("/ws", {
+        tls_app_->ws<WsConData>("/ws", {
             // Settings
             .compression = uWS::SHARED_COMPRESSOR,
             .maxPayloadLength = 16 * 1024,
@@ -567,8 +567,8 @@ void Server::Internal::worker_() {
             .upgrade = [&](auto* res, auto* req, auto* context) {
                 std::string cookie{req->getHeader("cookie")};
 
-                auto session_pair = sessions.find(cookie);
-                if (session_pair != sessions.end()) {
+                auto session_pair = sessions_.find(cookie);
+                if (session_pair != sessions_.end()) {
                     spdlog::info("[{:016x}] [{}] Accepting WebSocket upgrade", reinterpret_cast<uint64_t>(res), session_pair->first);
                     res->template upgrade<WsConData>(
                         { .session = &session_pair->second },
@@ -650,7 +650,7 @@ void Server::Internal::worker_() {
         // with mTLS
         if (!settings_.auth_hostname.empty() && !settings_.client_ca_file.empty()) {
             // If the constructor failed above, all calls below will become "no-ops"
-            tls_app->addServerName(settings_.auth_hostname, {
+            tls_app_->addServerName(settings_.auth_hostname, {
                 .key_file_name  = settings_.key_file.c_str(),
                 .cert_file_name = settings_.crt_file.c_str(),
                 .ca_file_name   = settings_.client_ca_file.c_str()
@@ -707,14 +707,14 @@ void Server::Internal::worker_() {
         for (auto& socket : settings_.tls_sockets) {
             std::string addr{socket.first};
             int         port{socket.second};
-            tls_app->listen(addr, port, LIBUS_LISTEN_EXCLUSIVE_PORT, [this, addr, port](auto* listen_socket) {
+            tls_app_->listen(addr, port, LIBUS_LISTEN_EXCLUSIVE_PORT, [this, addr, port](auto* listen_socket) {
                 std::string tmp{addr};
                 if (tmp.find(':') != std::string::npos) tmp = "[" + addr + "]";
 
                 if (listen_socket) {
                     spdlog::info("Listening on https://{}:{}", tmp, port);
                 } else {
-                    if (tls_app->constructorFailed()) {
+                    if (tls_app_->constructorFailed()) {
                         spdlog::error("Unable to listen on https://{}:{}. Invalid TLS configuration (cert/key/ca)", tmp, port);
                     } else {
                         spdlog::error("Unable to listen on https://{}:{}. Invalid/busy host/port", tmp, port);
@@ -731,17 +731,17 @@ void Server::Internal::worker_() {
     {
         // uWs apps need to be closed here and a call to uv_run() needed as
         // well to clean up libuv stuff
-        if (std_app) std_app->close();
-        if (tls_app) {
-            tls_app->close();
-            tls_app->removeServerName(settings_.auth_hostname);
+        if (std_app_) std_app_->close();
+        if (tls_app_) {
+            tls_app_->close();
+            tls_app_->removeServerName(settings_.auth_hostname);
         }
         ret = uv_run(&loop, UV_RUN_NOWAIT);
         //if (ret != 0) std::cerr << "Status: Loop still has stuff to handle, second invocation of uv_run() returned " << ret << "\n";
 
         // Ugly hack to make the two apps go out of scope before we free() the loop
-        auto tmp_std_app = std::move(std_app);
-        auto tmp_tls_app = std::move(tls_app);
+        auto tmp_std_app = std::move(std_app_);
+        auto tmp_tls_app = std::move(tls_app_);
     }
 
     // Detach the uWS Loop from our uv_loop
@@ -787,7 +787,7 @@ void Server::Internal::send_audio_(void) {
     sample_buffer_[512]++;
 
     // Loop over active sessions and send data if active websockets connection exist
-    for (auto& [id, session] : sessions) {
+    for (auto& [id, session] : sessions_) {
         // TODO: Investigate if uWS copies the data to be sent or not and move
         //       the buffer outside of the loop
         // TODO: Inspect client_buffer_depth and skip a frame here and there
