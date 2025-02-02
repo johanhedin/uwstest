@@ -59,7 +59,6 @@ private:
     class Connection;
     class Session;
     struct WsConData {
-        //uint64_t    connection_id{};
         Connection* connection{nullptr};
         Session*    session{nullptr};
     };
